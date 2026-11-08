@@ -52,3 +52,13 @@ python scripts/check_baselines.py
   other matches from public datasets, never on the public five-minute ground truth.
 - AI agents working in this repository follow [AGENTS.md](AGENTS.md), which keeps the match data
   away from hosted models, as the terms of the competition require.
+
+## Credits
+
+Models and parameters are fitted on the IDSSE open data, used under CC BY 4.0 and downloaded from
+the Hugging Face mirror `pysport/idsse-data`; the data is owned by the DFL and was collected by
+Sportec Solutions:
+
+> Bassek, M., Rein, R., Weber, H. and Memmert, D. An integrated dataset of spatiotemporal and
+> event data in elite soccer. *Scientific Data* 12, 195 (2025).
+> https://doi.org/10.1038/s41597-025-04505-y

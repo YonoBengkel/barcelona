@@ -1,9 +1,10 @@
 Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader, cache and label
 alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
 automatic-tracking quality), `practice` (the practice ground and its official scoring),
-`predictors` (the organisers' baseline on our arrays) and `features` (33 per-frame features from
-positions alone); and the scripts under "How to run". The models, the decoder and the submission
-writer are still planned; rewrite this file from the code as they land.
+`predictors` (the organisers' baseline on our arrays), `features` (33 per-frame features from
+positions alone) and `models` (the dead-ball and team logistic regressions, applied with numpy);
+and the scripts under "How to run". The decoder and the submission writer are still planned;
+rewrite this file from the code as they land.
 
 # Architecture
 
@@ -19,7 +20,11 @@ per-frame arrays: ball xy or NaN · object xy · team
    │  attacking direction (inferred from where its keeper stands); positions only, so the same
    │  on IDSSE and on the match
    ▼
-per-frame features ──► possession.models (planned): P(dead), P(home | alive)
+per-frame features ──► possession.models.design: log scale for skewed features, plus rolling
+   │  means over 2.5-5 s for context
+   │  possession.models.state_probabilities: P(dead) and P(home | alive) from two logistic
+   │  regressions in models/possession_v1.json, summed column by column in a fixed order so the
+   │  result does not depend on the CPU's BLAS
    ▼
 per-frame evidence: log-likelihood of H, A, D
    │  possession.decode  (HMM / semi-Markov, Viterbi)
@@ -52,6 +57,7 @@ aggregates only (see [AGENTS.md](AGENTS.md)).
 | `possession/` | the pipeline package | yes |
 | `scripts/` | entry points | yes |
 | `tests/` | tests on synthetic or public data | yes |
+| `models/` | fitted model weights as JSON, the only artefact the submission loads | yes |
 | `games.py`, `evaluation/`, `starter/` | the organisers' starter kit, unchanged | yes |
 | `docs/challenge/` | the organisers' documents | yes |
 | `data/` | match bundle and per-frame artefacts derived from it | no |
@@ -70,6 +76,8 @@ python scripts/simulate_report.py    # public data: IDSSE profile before and aft
 python scripts/calibrate_simulator.py  # public data: fit DegradeParams to the match's profile
 python scripts/eval_external.py      # public data: score predictors on the practice ground
 python scripts/feature_report.py     # public data: signal of each feature (ROC AUC)
+python scripts/train_models.py       # public data: fit the models leave-one-match-out, write
+                                     # models/possession_v1.json
 python scripts/data_properties.py    # reads the match data; prints its structure only
 ```
 
