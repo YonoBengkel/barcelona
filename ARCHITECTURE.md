@@ -1,4 +1,5 @@
-Status: plan. Only `possession/safety.py` and `scripts/check_baselines.py` exist; rewrite this
+Status: plan. Built so far: `possession/safety.py`, `possession/external.py` (IDSSE reader and
+label alignment), `scripts/check_baselines.py` and `scripts/idsse_label_report.py`. Rewrite this
 file from the code as each module lands.
 
 # Architecture
@@ -17,12 +18,16 @@ per-frame evidence: log-likelihood of H, A, D
    ▼
 labels ──► possession.submission.write (LF line endings) ──► evaluation/validate_submission.py
 
-external/  (public tracking of other matches, gitignored)
-   │  possession.io.read_external  ──►  same per-frame arrays + labels from ball status and possession
-   │  possession.simulate.degrade  ──►  same arrays at automatic-tracking quality
+external/idsse  (public IDSSE tracking and events of seven Bundesliga matches, gitignored)
+   │  possession.external.read_positions, read_events
    ▼
-scripts/eval_external.py: scores every variant with evaluation/possession_metrics.py and chooses
-models and parameters. The choices are committed; the match itself never chooses anything.
+same per-frame arrays + raw labels from DFL's BallStatus and BallPossession
+   │  possession.external.controlled_labels: keeps a possession change only where the new team
+   │  restarts play or acts with control, the challenge's definition (raw DFL changes on any touch)
+   │  possession.simulate.degrade (planned)  ──►  same arrays at automatic-tracking quality
+   ▼
+scripts/eval_external.py (planned): scores every variant with evaluation/possession_metrics.py and
+chooses models and parameters. The choices are committed; the match itself never chooses anything.
 ```
 
 Every script that reads the match data runs through `possession.safety.run_safely` and prints
@@ -47,7 +52,11 @@ aggregates only (see [AGENTS.md](AGENTS.md)).
 pip install -r requirements.txt
 python -m pytest                     # synthetic and public data only
 python scripts/check_baselines.py    # reads the match data; prints aggregates only
+python scripts/idsse_label_report.py # public data: raw against aligned possession statistics
 ```
+
+The IDSSE files come from the Hugging Face mirror `pysport/idsse-data` into `external/idsse/`,
+names unchanged (`possession.external.paths` lists them).
 
 Planned: `scripts/make_submission.py` (match data to CSV) and `scripts/eval_external.py`
 (scores variants on the practice matches).

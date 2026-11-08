@@ -36,8 +36,9 @@ public one covers five minutes.
    kinematics of the players and the ball.
 3. A temporal decoder over `H`, `A`, `D` (a hidden Markov or semi-Markov model, decoded with
    Viterbi) that turns the evidence into whole possessions instead of flickering frames.
-4. A practice ground on other matches: public tracking with per-frame ball status and possession,
-   degraded to look like automatic tracking. Every model and parameter choice is made there.
+4. A practice ground on other matches: the public IDSSE tracking, whose per-frame ball status and
+   possession are aligned to the challenge's controlled-possession definition and degraded to
+   look like automatic tracking. Every model and parameter choice is made there.
 5. One command that regenerates the submission, and a short technical document.
 
 ## Non-goals
