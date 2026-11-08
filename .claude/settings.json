@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./data/**)",
+      "Read(**/BAR-ATH_*_atd.txt)",
+      "Read(**/BAR-ATH_*_atd.xml)",
+      "Read(**/BAR-ATH_*_homography.csv)",
+      "Read(**/BAR-ATH_*_smart_tagging.xml)",
+      "Read(**/*.mp4)"
+    ]
+  }
+}

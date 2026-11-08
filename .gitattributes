@@ -1,0 +1,6 @@
+# Line endings are part of the submission contract: the CSV must be byte-identical on the
+# organisers' machine, so text is stored and checked out with LF everywhere.
+* text=auto eol=lf
+*.mp4 binary
+*.npy binary
+*.npz binary

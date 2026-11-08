@@ -1,0 +1,18 @@
+#!/bin/sh
+# Refuse to commit the match data. The bundle is licensed for the competition only and this
+# repository is public, so a commit that contains it is redistribution (docs/challenge/RULES.md).
+# .gitignore already keeps it out; this catches `git add -f` and a .gitignore that has drifted.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+
+blocked=$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -E '^data/|(^|/)BAR-ATH_[^/]*_(atd\.(txt|xml)|homography\.csv|smart_tagging\.xml)$|\.mp4$' \
+  | grep -v '^data/README\.md$')
+
+if [ -n "$blocked" ]; then
+  echo "pre-commit: refusing to commit match data:" >&2
+  echo "$blocked" >&2
+  echo "Unstage it with 'git restore --staged <path>' and keep it out of the repository." >&2
+  exit 1
+fi
+exit 0
