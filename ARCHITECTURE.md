@@ -1,9 +1,9 @@
 Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader, cache and label
 alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
-automatic-tracking quality), `practice` (the practice ground and its official scoring) and
-`predictors` (the organisers' baseline on our arrays); and the scripts under "How to run".
-Features, the decoder and the submission writer are still planned; rewrite this file from the
-code as they land.
+automatic-tracking quality), `practice` (the practice ground and its official scoring),
+`predictors` (the organisers' baseline on our arrays) and `features` (33 per-frame features from
+positions alone); and the scripts under "How to run". The models, the decoder and the submission
+writer are still planned; rewrite this file from the code as they land.
 
 # Architecture
 
@@ -13,8 +13,13 @@ code as they land.
 data/tactical  (match bundle, gitignored)
    │  possession.atd.read_atd, halves
    ▼
-per-frame arrays: ball xy or NaN · object xy · team · speed
-   │  possession.features
+per-frame arrays: ball xy or NaN · object xy · team
+   │  possession.features.compute: ball gaps and where the ball was last seen, player speeds,
+   │  nearest player and crowding per team, ball direction and team shape along each team's
+   │  attacking direction (inferred from where its keeper stands); positions only, so the same
+   │  on IDSSE and on the match
+   ▼
+per-frame features ──► possession.models (planned): P(dead), P(home | alive)
    ▼
 per-frame evidence: log-likelihood of H, A, D
    │  possession.decode  (HMM / semi-Markov, Viterbi)
@@ -64,6 +69,8 @@ python scripts/atd_profile.py        # reads the match data; prints aggregates o
 python scripts/simulate_report.py    # public data: IDSSE profile before and after degradation
 python scripts/calibrate_simulator.py  # public data: fit DegradeParams to the match's profile
 python scripts/eval_external.py      # public data: score predictors on the practice ground
+python scripts/feature_report.py     # public data: signal of each feature (ROC AUC)
+python scripts/data_properties.py    # reads the match data; prints its structure only
 ```
 
 The first read of an IDSSE match parses its XML (about 20 s) and caches the arrays under
