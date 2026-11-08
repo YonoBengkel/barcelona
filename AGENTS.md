@@ -46,3 +46,12 @@ with an agent never breaks it.
 
 - `data/`, `*.mp4` and the bundle files are gitignored, and `.githooks/pre-commit` refuses them.
   Run `git config core.hooksPath .githooks` once per clone.
+
+## 6. Where jobs run
+
+- Jobs on public data (fitting, evaluating, calibrating, reports on IDSSE) run on Kaggle through
+  `kaggle/` ([kaggle/README.md](kaggle/README.md)). A team member starts them. An agent never runs
+  them on the team's laptop: it writes the job, names the `COMMAND`, and reads the returned log.
+- Quick tests on synthetic data may run anywhere.
+- The match data never goes to Kaggle or to any other cloud service. The scripts that read it run
+  on the team's laptop, started by a team member (rule 2).

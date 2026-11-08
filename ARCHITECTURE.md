@@ -3,8 +3,8 @@ alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE
 automatic-tracking quality), `practice` (the practice ground and its official scoring),
 `predictors` (the organisers' baseline on our arrays), `features` (33 per-frame features from
 positions alone) and `models` (the dead-ball and team logistic regressions, applied with numpy);
-and the scripts under "How to run". The decoder and the submission writer are still planned;
-rewrite this file from the code as they land.
+the scripts under "How to run"; and the Kaggle runner in `kaggle/`. The decoder and the
+submission writer are still planned; rewrite this file from the code as they land.
 
 # Architecture
 
@@ -58,6 +58,8 @@ aggregates only (see [AGENTS.md](AGENTS.md)).
 | `scripts/` | entry points | yes |
 | `tests/` | tests on synthetic or public data | yes |
 | `models/` | fitted model weights as JSON, the only artefact the submission loads | yes |
+| `kaggle/` | the runner for jobs on public data: one notebook cell, and the script it calls | yes |
+| `runs/` | log and manifest of each Kaggle run: commit, command, versions, output digests | yes |
 | `games.py`, `evaluation/`, `starter/` | the organisers' starter kit, unchanged | yes |
 | `docs/challenge/` | the organisers' documents | yes |
 | `data/` | match bundle and per-frame artefacts derived from it | no |
@@ -66,29 +68,38 @@ aggregates only (see [AGENTS.md](AGENTS.md)).
 
 ## How to run
 
+Jobs on public data run on Kaggle, through the runner in `kaggle/`, which builds the pinned
+environment, downloads IDSSE, runs the tests and then the job, and returns its outputs, log and
+manifest as one zip ([kaggle/README.md](kaggle/README.md)). Set the job as `COMMAND` in the
+notebook cell:
+
 ```bash
-pip install -r requirements.txt
-python -m pytest                     # synthetic and public data only
-python scripts/check_baselines.py    # reads the match data; prints aggregates only
-python scripts/idsse_label_report.py # public data: raw against aligned possession statistics
-python scripts/atd_profile.py        # reads the match data; prints aggregates only
-python scripts/simulate_report.py    # public data: IDSSE profile before and after degradation
-python scripts/calibrate_simulator.py  # public data: fit DegradeParams to the match's profile
-python scripts/eval_external.py      # public data: score predictors on the practice ground
-python scripts/feature_report.py     # public data: signal of each feature (ROC AUC)
-python scripts/train_models.py       # public data: fit the models leave-one-match-out, write
-                                     # models/possession_v1.json
-python scripts/data_properties.py    # reads the match data; prints its structure only
+scripts/train_models.py        # fit the models leave-one-match-out, write models/possession_v1.json
+scripts/eval_external.py       # score predictors on the practice ground
+scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
+scripts/feature_report.py      # signal of each feature (ROC AUC)
+scripts/simulate_report.py     # IDSSE profile before and after degradation
+scripts/idsse_label_report.py  # raw against aligned possession statistics
 ```
 
-The first read of an IDSSE match parses its XML (about 20 s) and caches the arrays under
-`external/idsse/cache/`; later reads take a fraction of a second.
+Jobs that read the match data run on the team's laptop only, and print aggregates only:
 
-The IDSSE files come from the Hugging Face mirror `pysport/idsse-data` into `external/idsse/`,
-names unchanged (`possession.external.paths` lists them).
+```bash
+pip install -r requirements.txt
+python scripts/check_baselines.py    # rebuilds the organisers' baselines and compares them
+python scripts/atd_profile.py        # profile of the match's tracking
+python scripts/data_properties.py    # structure of the data bundle
+python -m pytest                     # synthetic data only; also runs in every Kaggle run
+```
 
-Planned: `scripts/make_submission.py` (match data to CSV) and `scripts/eval_external.py`
-(scores variants on the practice matches).
+`scripts/fetch_idsse.py` downloads the IDSSE files from the Hugging Face mirror
+`pysport/idsse-data` into `external/idsse/`, names unchanged, at a pinned revision, and checks
+every file's size and digest. The first read of an IDSSE match parses its XML (about 20 s on the
+laptop) and caches the arrays under `external/idsse/cache/`; later reads take a fraction of a
+second.
+
+Planned: `scripts/make_submission.py` (match data to CSV, on the laptop) and the decoder's
+parameter search (on Kaggle).
 
 ## Application layers
 
@@ -98,12 +109,12 @@ Planned: `scripts/make_submission.py` (match data to CSV) and `scripts/eval_exte
 | API | none |
 | Data | files only: the match bundle and public datasets, both gitignored; committed model parameters |
 | Auth | none |
-| Hosting | none; runs on the team's machine |
-| Compute | local CPU, single process, deterministic |
-| CI/CD | none; `.githooks/pre-commit` refuses commits that contain match data |
+| Hosting | none |
+| Compute | Kaggle CPU notebooks for jobs on public data, started by hand through `kaggle/`; the team's laptop, on CPU, for every job that reads the match data, which never leaves it. Single process, deterministic |
+| CI/CD | none; `.githooks/pre-commit` refuses commits that contain match data, and every Kaggle run runs the tests before its job |
 | Row-level security | not applicable |
 | Rate limiting | not applicable |
 | Cache and CDN | per-frame artefacts cached under `data/` and `external/` |
 | Scaling | not applicable: one match |
-| Error tracking and logs | stdout with aggregates only; exception messages are withheld when the match data is read |
+| Error tracking and logs | stdout with aggregates only; exception messages are withheld when the match data is read. Kaggle runs keep their full log in `runs/` |
 | Recovery | git history plus a deterministic pipeline: re-running reproduces every output |

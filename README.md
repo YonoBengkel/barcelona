@@ -33,6 +33,9 @@ git config core.hooksPath .githooks    # refuses any commit that contains match 
 Unpack the match bundle into `data/` exactly as [docs/challenge/DATA.md](docs/challenge/DATA.md)
 describes.
 
+Jobs on public data, such as fitting the models, run in a Kaggle notebook through
+[kaggle/](kaggle/README.md). The match data stays on the team's machine.
+
 ## Reproducing the submission
 
 The goal is one command that regenerates the submitted CSV byte for byte on CPU. It does not exist

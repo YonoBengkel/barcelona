@@ -69,3 +69,5 @@ external/
 # Personal Claude Code overrides. The shared deny rules live in .claude/settings.json.
 .claude/settings.local.json
 .pytest_cache/
+# What a Kaggle run returns; unzip it at the root, then delete it (kaggle/README.md).
+kaggle-results*.zip
