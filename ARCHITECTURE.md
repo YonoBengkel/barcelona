@@ -1,6 +1,7 @@
-Status: plan. Built so far: `possession/safety.py`, `possession/external.py` (IDSSE reader and
-label alignment), `scripts/check_baselines.py` and `scripts/idsse_label_report.py`. Rewrite this
-file from the code as each module lands.
+Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader and label
+alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
+automatic-tracking quality); and the scripts under "How to run". Features, the decoder and the
+submission writer are still planned; rewrite this file from the code as they land.
 
 # Architecture
 
@@ -8,7 +9,7 @@ file from the code as each module lands.
 
 ```
 data/tactical  (match bundle, gitignored)
-   │  possession.io.read_atd
+   │  possession.atd.read_atd, halves
    ▼
 per-frame arrays: ball xy or NaN · object xy · team · speed
    │  possession.features
@@ -24,7 +25,9 @@ external/idsse  (public IDSSE tracking and events of seven Bundesliga matches, g
 same per-frame arrays + raw labels from DFL's BallStatus and BallPossession
    │  possession.external.controlled_labels: keeps a possession change only where the new team
    │  restarts play or acts with control, the challenge's definition (raw DFL changes on any touch)
-   │  possession.simulate.degrade (planned)  ──►  same arrays at automatic-tracking quality
+   │  possession.simulate.degrade  ──►  same arrays at automatic-tracking quality: the ball hidden
+   │  in risk-weighted gaps, players dropped, drifting noise, no ball height. Its parameters are
+   │  calibrated against possession.profile run on the match's tracking (aggregates only).
    ▼
 scripts/eval_external.py (planned): scores every variant with evaluation/possession_metrics.py and
 chooses models and parameters. The choices are committed; the match itself never chooses anything.
@@ -53,6 +56,8 @@ pip install -r requirements.txt
 python -m pytest                     # synthetic and public data only
 python scripts/check_baselines.py    # reads the match data; prints aggregates only
 python scripts/idsse_label_report.py # public data: raw against aligned possession statistics
+python scripts/atd_profile.py        # reads the match data; prints aggregates only
+python scripts/simulate_report.py    # public data: IDSSE profile before and after degradation
 ```
 
 The IDSSE files come from the Hugging Face mirror `pysport/idsse-data` into `external/idsse/`,
