@@ -1,7 +1,9 @@
-Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader and label
+Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader, cache and label
 alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
-automatic-tracking quality); and the scripts under "How to run". Features, the decoder and the
-submission writer are still planned; rewrite this file from the code as they land.
+automatic-tracking quality), `practice` (the practice ground and its official scoring) and
+`predictors` (the organisers' baseline on our arrays); and the scripts under "How to run".
+Features, the decoder and the submission writer are still planned; rewrite this file from the
+code as they land.
 
 # Architecture
 
@@ -29,8 +31,10 @@ same per-frame arrays + raw labels from DFL's BallStatus and BallPossession
    │  in risk-weighted gaps, players dropped, drifting noise, no ball height. Its parameters are
    │  calibrated against possession.profile run on the match's tracking (aggregates only).
    ▼
-scripts/eval_external.py (planned): scores every variant with evaluation/possession_metrics.py and
-chooses models and parameters. The choices are committed; the match itself never chooses anything.
+possession.practice.cases ──► scripts/eval_external.py: runs every predictor on every degraded
+half, scores it with evaluation/possession_metrics.py (pooled over matches and per match), and
+prints the organisers' published full-match baseline scores beside ours as a fidelity check.
+Models and parameters are chosen here; the match itself never chooses anything.
 ```
 
 Every script that reads the match data runs through `possession.safety.run_safely` and prints
@@ -58,7 +62,12 @@ python scripts/check_baselines.py    # reads the match data; prints aggregates o
 python scripts/idsse_label_report.py # public data: raw against aligned possession statistics
 python scripts/atd_profile.py        # reads the match data; prints aggregates only
 python scripts/simulate_report.py    # public data: IDSSE profile before and after degradation
+python scripts/calibrate_simulator.py  # public data: fit DegradeParams to the match's profile
+python scripts/eval_external.py      # public data: score predictors on the practice ground
 ```
+
+The first read of an IDSSE match parses its XML (about 20 s) and caches the arrays under
+`external/idsse/cache/`; later reads take a fraction of a second.
 
 The IDSSE files come from the Hugging Face mirror `pysport/idsse-data` into `external/idsse/`,
 names unchanged (`possession.external.paths` lists them).

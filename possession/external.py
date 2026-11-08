@@ -156,6 +156,39 @@ def read_events(path, home, away):
     return np.array(times), np.array(owners, dtype=np.int8), np.array(controlled)
 
 
+# Bump when read_positions or read_events change what they return, so stale caches are ignored.
+CACHE_VERSION = 1
+
+
+def load_match(match_id, root=IDSSE_DIR):
+    """(info, halves, events) for one match: parsed once, then read from external/idsse/cache.
+
+    Parsing a 330-400 MB position file takes about 20 s; the cached arrays load in about one.
+    events is the (times, teams, controlled) triple of read_events.
+    """
+    files = paths(match_id, root)
+    info = read_info(files["info"])
+    cache = os.path.join(root, "cache", "{}.v{}.npz".format(match_id, CACHE_VERSION))
+    if os.path.isfile(cache):
+        with np.load(cache) as data:
+            halves = {section: {key.split("__", 1)[1]: data[key] for key in data.files
+                                if key.startswith(section + "__")} for section in SECTIONS}
+            events = (data["events__times"], data["events__teams"], data["events__controlled"])
+        for half in halves.values():
+            half["t0"] = float(half["t0"])
+        return info, halves, events
+
+    halves = read_positions(files["positions"], info["home"], info["away"])
+    events = read_events(files["events"], info["home"], info["away"])
+    flat = {"{}__{}".format(section, key): np.asarray(value)
+            for section in SECTIONS for key, value in halves[section].items()}
+    flat.update({"events__times": events[0], "events__teams": events[1],
+                 "events__controlled": events[2]})
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    np.savez(cache, **flat)
+    return info, halves, events
+
+
 def raw_labels(half):
     """'H', 'A' or 'D' per frame, straight from BallStatus and BallPossession."""
     return np.where(~half["alive"], "D", np.where(half["owner"] == HOME, "H", "A"))
@@ -185,6 +218,28 @@ def flip_offsets(labels, frames, teams, window=5 * FPS):
                     out.append(int(delta))
         previous = label
     return np.array(out)
+
+
+def aligned_labels(halves, events, tolerance_s):
+    """({section: labels}, shift, offsets): controlled-possession labels for one match.
+
+    shift is the median frame offset from DFL's possession changes to the new team's controlled
+    actions, measured on this match and removed before matching; offsets are the measurements.
+    """
+    times, teams, controlled = events
+    times, teams = times[controlled], teams[controlled]
+    per_half = {}
+    for section in SECTIONS:
+        half = halves[section]
+        frames = np.round((times - half["t0"]) * FPS).astype(int)
+        inside = (frames >= 0) & (frames < len(half["alive"]))
+        per_half[section] = (raw_labels(half), frames[inside], teams[inside])
+    offsets = np.concatenate([flip_offsets(*per_half[s]) for s in SECTIONS])
+    shift = int(np.median(offsets)) if len(offsets) else 0
+    tolerance = int(round(tolerance_s * FPS))
+    labels = {s: controlled_labels(raw, frames - shift, half_teams, tolerance)
+              for s, (raw, frames, half_teams) in per_half.items()}
+    return labels, shift, offsets
 
 
 def controlled_labels(labels, frames, teams, tolerance):

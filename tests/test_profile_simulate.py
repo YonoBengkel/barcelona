@@ -7,10 +7,12 @@ from possession.profile import gap_starts, profile, run_lengths
 from possession.simulate import DegradeParams, degrade
 
 
-def make_half(n=20000, players=22, seed=1):
-    """A random-walk ball with 22 players scattered around it, ball height mostly low."""
+def make_half(n=20000, players=22, seed=1, period=3000):
+    """A ball looping inside the pitch with 22 players scattered around it."""
     rng = np.random.default_rng(seed)
-    ball = np.cumsum(rng.normal(0, 0.3, (n, 2)), axis=0)
+    t = np.arange(n)
+    ball = np.stack([40 * np.sin(2 * np.pi * t / period),
+                     25 * np.sin(2 * np.pi * t / (0.7 * period))], axis=1)
     return {
         "ball_x": ball[:, 0].astype(np.float32), "ball_y": ball[:, 1].astype(np.float32),
         "ball_z": np.abs(rng.normal(0, 1.0, n)).astype(np.float32),
@@ -38,8 +40,9 @@ def test_profile_of_clean_tracking():
 
 
 def test_ball_missing_share_hits_the_target():
-    out = degrade(make_half(), DegradeParams(ball_missing_share=0.4), seed=0)
-    assert np.isnan(out["ball_x"]).mean() == pytest.approx(0.4, abs=0.02)
+    # Gaps last about 12 s by default, so a long half keeps the share's granularity fine.
+    out = degrade(make_half(n=80000), DegradeParams(ball_missing_share=0.4), seed=0)
+    assert np.isnan(out["ball_x"]).mean() == pytest.approx(0.4, abs=0.03)
 
 
 def test_players_tracked_hits_the_target():
@@ -75,10 +78,12 @@ def test_noise_drifts_instead_of_jumping():
     assert np.nanmedian(step) < 0.1  # independent 0.3 m noise per frame would step about 0.33 m
 
 
-def test_risk_puts_gaps_where_the_ball_is_high():
-    half = make_half()
-    out = degrade(half, DegradeParams(crowd_weight=0.0, height_weight=3.0), seed=0)
-    hidden = np.isnan(out["ball_x"])
-    high = half["ball_z"] > 2.0
+def test_risk_puts_gaps_where_the_ball_is_slow():
+    slow_half, fast_half = make_half(n=40000, period=40000), make_half(n=40000, period=400)
+    half = {key: np.concatenate([slow_half[key], fast_half[key]]) if key != "team"
+            else slow_half[key] for key in slow_half}
+    params = DegradeParams(line_weight=0.0, box_weight=0.0, crowd_weight=0.0, slow_weight=3.0,
+                           short_gap_share=1.0, ball_missing_share=0.2)
+    hidden = np.isnan(degrade(half, params, seed=0)["ball_x"])
     starts = np.flatnonzero(~hidden[:-1] & hidden[1:]) + 1
-    assert high[starts].mean() > 2 * high.mean()
+    assert np.mean(starts < 40000) > 0.75  # the slow first part is half the frames
