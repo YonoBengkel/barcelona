@@ -72,3 +72,17 @@ def test_ball_states_and_the_state_table():
     assert rows["all"]["right"] == 0.5 and rows["gap <=5 s"]["true D"] == 1.0
     lines = diagnose.format_state_table(list(rows.values()))
     assert "true D" in lines[0] and len(lines) == len(diagnose.STATES) + 2
+
+    speed = np.array([1.0, 2.0, 3.0, 4.0, 5.0, np.nan])
+    rows = {row["state"]: row for row in diagnose.state_table(states, pred, gt, speed)}
+    assert rows["all"]["m/s"] == 3.0  # the median of 1..5; the missing value is left out
+    assert rows["gap <=5 s"]["m/s D"] == 3.0 and np.isnan(rows["gap <=5 s"]["m/s live"])
+    assert "m/s live" in diagnose.format_state_table(list(rows.values()))[0]
+
+
+def test_player_speed_undoes_the_design_log_scale():
+    features = np.zeros((2, len(NAMES)))
+    features[:, NAMES.index("speed_all")] = [0.0, 2.0]
+    assert diagnose.player_speed(features).tolist() == [0.0, 2.0]
+    logged = np.log1p(features)
+    assert np.allclose(diagnose.player_speed(logged, logged=True), [0.0, 2.0])

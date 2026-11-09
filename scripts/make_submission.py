@@ -80,13 +80,14 @@ def main():
     atd = read_atd(meta_path, raw_path, n_frames, pitch)
     declared = metadata_attack_directions(meta_path)
 
-    parts, agreement, states, calls = [], [], [], []
+    parts, agreement, states, calls, speeds = [], [], [], [], []
     for number, half in enumerate(halves(atd, half_video_blocks(GAME))):
         features = compute(half, pitch)[0]
         labels = decode(log_state_probabilities(models, design(features)), models["decoder"])
         parts.append((half["first_frame"], labels))
         states.append(diagnose.ball_states(features))
         calls.append(practice.codes(labels))
+        speeds.append(diagnose.player_speed(features))
         if 0 in declared:
             agreement.append("not readable from the metadata")
         else:
@@ -130,8 +131,8 @@ def main():
     print("attacking directions inferred from the tracking agree with the metadata: first half "
           "{}, second half {}".format(*agreement))
     print("calls by ball state on the graded frames (train_models' log has the practice ground's):")
-    for line in diagnose.format_state_table(diagnose.state_table(np.concatenate(states),
-                                                                 np.concatenate(calls))):
+    for line in diagnose.format_state_table(diagnose.state_table(
+            np.concatenate(states), np.concatenate(calls), speed=np.concatenate(speeds))):
         print("  " + line)
 
     public = pm.evaluate(pm.label_codes(pm.read_label_csv(PUBLIC_GT)), codes)

@@ -246,21 +246,24 @@ def report_errors(held_out, predicted, matches):
     predicted: per match, the codes the nested decoder gave, X between halves. The same ball-state
     table, without the truth columns, is what scripts/make_submission.py prints for the match.
     """
-    states, preds, truths, outcomes, shares = [], [], [], [], []
+    states, preds, truths, speeds, outcomes, shares = [], [], [], [], [], []
     for match in matches:
         part = held_out[match]
         gt = practice.joined([practice.codes(l) for l in halves_of(part, "labels")], gap=pm.X)
         state = practice.joined([diagnose.ball_states(X) for X in halves_of(part, "X")], gap=-1)
+        speed = practice.joined([diagnose.player_speed(X, logged=True)
+                                 for X in halves_of(part, "X")], gap=np.nan)
         graded = gt != pm.X
         states.append(state[graded])
         preds.append(predicted[match][graded])
         truths.append(gt[graded])
+        speeds.append(speed[graded])
         outcomes.append(diagnose.spell_outcomes(gt, predicted[match]))
         shares.append("{} {:.1%}/{:.1%}".format(match, np.mean(gt[graded] == pm.D),
                                                 np.mean(predicted[match][graded] == pm.D)))
-    states, preds, truths = (np.concatenate(a) for a in (states, preds, truths))
+    states, preds, truths, speeds = (np.concatenate(a) for a in (states, preds, truths, speeds))
     print("\nerrors of the held-out pipeline (M10), labels at +/-1 s")
-    for line in diagnose.format_state_table(diagnose.state_table(states, preds, truths)):
+    for line in diagnose.format_state_table(diagnose.state_table(states, preds, truths, speeds)):
         print(line)
     for line in diagnose.format_confusion(truths, preds):
         print(line)

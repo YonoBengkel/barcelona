@@ -36,9 +36,24 @@ def ball_states(features):
     return np.select([seen, bridged, gap_s <= 5.0, gap_s <= 15.0], [0, 1, 2, 3], 4).astype(np.int8)
 
 
-def state_table(states, pred, gt=None):
+def player_speed(features, logged=False):
+    """(frames,) mean speed of the tracked players over the last second, m/s: the speed_all
+    feature of possession.features.compute, or of possession.models.design (logged=True), which
+    holds it on a log scale. Players slow down when play stops, so its median per ball state shows
+    whether the ball tends to go missing in play or in stoppages, without a label."""
+    speed = np.asarray(features[:, NAMES.index("speed_all")], dtype=np.float64)
+    return np.expm1(speed) if logged else speed
+
+
+def _median(values):
+    values = values[np.isfinite(values)]
+    return float(np.median(values)) if len(values) else float("nan")
+
+
+def state_table(states, pred, gt=None, speed=None):
     """Rows per ball state, then 'all': share of frames, predicted H, A and D shares and, with
-    labels, the true D share and the share of frames called right."""
+    labels, the true D share and the share of frames called right. With speed (player_speed), the
+    median player speed, and with labels too, its median over the truly dead and the live frames."""
     groups = [(name, states == index) for index, name in enumerate(STATES)]
     rows = []
     for name, mask in groups + [("all", np.ones(len(states), dtype=bool))]:
@@ -49,17 +64,27 @@ def state_table(states, pred, gt=None):
         if gt is not None:
             row["true D"] = float(np.mean(gt[mask] == pm.D)) if n else 0.0
             row["right"] = float(np.mean(gt[mask] == pred[mask])) if n else 0.0
+        if speed is not None:
+            row["m/s"] = _median(speed[mask])
+            if gt is not None:
+                row["m/s D"] = _median(speed[mask & (gt == pm.D)])
+                row["m/s live"] = _median(speed[mask & (gt != pm.D)])
         rows.append(row)
     return rows
 
 
+SHARES = ("frames", "H", "A", "D", "true D", "right")
+SPEEDS = ("m/s", "m/s D", "m/s live")
+
+
 def format_state_table(rows):
     """Printable lines of state_table()."""
-    columns = [key for key in ("frames", "H", "A", "D", "true D", "right") if key in rows[0]]
-    lines = ["{:<11}".format("ball") + "".join("{:>8}".format(c) for c in columns)]
+    columns = [key for key in SHARES + SPEEDS if key in rows[0]]
+    lines = ["{:<11}".format("ball") + "".join("{:>9}".format(c) for c in columns)]
     for row in rows:
-        lines.append("{:<11}".format(row["state"])
-                     + "".join("{:>8.1%}".format(row[c]) for c in columns))
+        lines.append("{:<11}".format(row["state"]) + "".join(
+            "{:>9.1%}".format(row[c]) if c in SHARES else "{:>9.2f}".format(row[c])
+            for c in columns))
     return lines
 
 
