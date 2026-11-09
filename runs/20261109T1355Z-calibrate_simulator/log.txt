@@ -1,0 +1,35 @@
+commit 69d5d9fab357304c2d4e999318e4c2537eed397c
+job scripts/calibrate_simulator.py --players
+4 CPUs, 1038 GB free in /tmp
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+......................................................................   [100%]
+70 passed in 24.94s
+
+$ /tmp/venv/bin/python scripts/calibrate_simulator.py --players
+14 halves of J03WMX, J03WN1, J03WOH, J03WOY, J03WPY, J03WQQ, J03WR9
+players' speeds over 1 s, p10/p25/p50/p75/p90 in m/s: mean over the players, then each player
+  noise 0.000 m   0.72  1.07  1.63  2.42  3.19   0.37  0.86  1.42  2.58  3.80  loss 0.302
+  noise 0.025 m   0.77  1.10  1.65  2.43  3.20   0.43  0.88  1.43  2.59  3.81  loss 0.519
+  noise 0.050 m   0.88  1.17  1.69  2.46  3.22   0.58  0.94  1.47  2.61  3.82  loss 1.096
+  noise 0.075 m   1.02  1.28  1.76  2.51  3.26   0.76  1.05  1.53  2.64  3.85  loss 1.931
+  noise 0.100 m   1.18  1.41  1.86  2.58  3.30   0.96  1.19  1.62  2.68  3.88  loss 2.899
+  noise 0.150 m   1.55  1.73  2.12  2.76  3.44   1.35  1.55  1.89  2.82  3.98  loss 5.069
+  match           0.69  0.99  1.49  2.25  2.99   0.22  0.77  1.36  2.41  3.78
+best player_noise_m 0.000 (loss 0.302)
+
+ball speed when seen, p10/p25/p50/p75/p90 in m/s, and before a gap (p50), for information only
+  ball noise 0.00 m   0.00  0.00  3.55  8.55 14.19  before a gap  4.60  loss 108.377
+  ball noise 0.05 m   0.30  0.59  3.58  8.58 14.21  before a gap  4.60  loss 3.541
+  ball noise 0.10 m   0.58  1.09  3.63  8.64 14.25  before a gap  4.65  loss 1.038
+  ball noise 0.20 m   1.07  1.91  3.96  8.84 14.42  before a gap  4.83  loss 0.118
+  match             1.01  2.37  5.08  9.54 14.31  before a gap  1.51

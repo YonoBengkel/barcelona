@@ -41,9 +41,10 @@ for path in (ROOT, os.path.join(ROOT, "evaluation")):
 from possession.safety import run_safely  # noqa: E402
 
 DEFAULT_OUT = os.path.join(ROOT, "evaluation", "results", "possession_v1.csv")
-# Adopted on 2026-11-09 by the rule in scripts/train_models.py (runs/20261109T1004Z-train_models):
-# trees for both the dead-ball and the team call, held-out spellF1 0.651 against 0.630 for
-# v1+trees (logistic dead-ball model, smaller team trees).
+# Trees for both the dead-ball and the team call (M11e), refitted in M11g on the practice ground
+# whose player noise was fitted to the match's player speeds. Adopted on 2026-11-09 by the rule in
+# scripts/train_models.py (runs/20261109T1411Z-train_models): held-out spellF1 0.650 against 0.539
+# for the same kinds fitted on the ground before, scored on the same frames.
 DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+trees-wide+deadtrees.json")
 PUBLIC_GT = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
 # baseline_smooth50 on the public window, as docs/challenge/README.md prints it.
