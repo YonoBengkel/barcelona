@@ -119,31 +119,49 @@ def synthetic_design_inputs(rng, matches):
     return train, held_out, truth
 
 
-def test_fit_design_writes_one_model_file_per_kind_of_team_model(tmp_path, monkeypatch, capsys):
+def test_fit_design_writes_one_model_file_per_pair_of_kinds(tmp_path, monkeypatch, capsys):
     rng = np.random.default_rng(5)
     matches = ["M1", "M2", "M3"]
     train, held_out, truth = synthetic_design_inputs(rng, matches)
     axes = {"team_switch": (4, 16), "dead_switch": (16,), "dead_bias": (0.0,)}
+    small = ({"max_iter": 15, "max_leaf_nodes": 7, "learning_rate": 0.3, "min_samples_leaf": 5},)
     monkeypatch.setattr(train_models, "labels_at",
                         lambda match, tolerances: {t: truth[match] for t in tolerances})
     monkeypatch.setattr(train_models, "DECODER_AXES", axes)
     monkeypatch.setattr(train_models, "DECODER_GRID", tuple(itertools.product(*axes.values())))
     monkeypatch.setattr(train_models, "GRID", (1.0,))
-    monkeypatch.setattr(train_models, "TREE_GRID", (
-        {"max_iter": 15, "max_leaf_nodes": 7, "learning_rate": 0.3, "min_samples_leaf": 5},))
+    monkeypatch.setattr(train_models, "TREES", {("team", "trees"): small,
+                                                ("dead", "trees"): small})
     args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False)
 
-    summaries = train_models.fit_design("v1", ["logistic", "trees"], train, held_out, matches,
-                                        args, time.time())
+    summaries = train_models.fit_design("v1", ["logistic", "trees"], ["logistic", "trees"],
+                                        train, held_out, matches, args, time.time())
 
-    assert set(summaries) == {"v1", "v1+trees"}
+    assert set(summaries) == {"v1", "v1+trees", "v1+deadtrees", "v1+trees+deadtrees"}
     for variant in summaries:
         models = load(str(tmp_path / "possession_{}.json".format(variant)))
         assert models["design"] == "v1" and "decoder" in models
-    assert load(str(tmp_path / "possession_v1+trees.json"))["team"]["kind"] == "trees"
-    train_models.compare(summaries, matches)
+    both = load(str(tmp_path / "possession_v1+trees+deadtrees.json"))
+    assert both["team"]["kind"] == both["dead"]["kind"] == "trees"
+    assert "kind" not in load(str(tmp_path / "possession_v1.json"))["dead"]  # logistic
+    train_models.compare(summaries, matches, "v1+trees")
     printed = capsys.readouterr().out
-    assert "team trees" in printed and "v1+trees against v1" in printed
+    assert "team trees" in printed and "dead trees" in printed
+    assert "v1+trees+deadtrees against v1+trees" in printed and "verdict:" in printed
+
+
+def test_the_best_passing_variant_is_the_one_adopted():
+    matches = ["M1", "M2", "M3", "M4", "M5", "M6", "M7"]
+
+    def summary(level):
+        return {"pooled": {t: (level, 0.88) for t in (0.5, 1.0, 2.0)},
+                "per_match": {m: level for m in matches}}
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        winner = train_models.compare({"ref": summary(0.60), "a": summary(0.62),
+                                       "b": summary(0.63), "c": summary(0.605)}, matches, "ref")
+        nobody = train_models.compare({"ref": summary(0.60), "c": summary(0.605)}, matches, "ref")
+    assert winner == "b" and nobody is None
 
 
 def test_a_design_is_adopted_only_by_the_rule():

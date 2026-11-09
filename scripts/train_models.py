@@ -2,12 +2,13 @@
 
 Each IDSSE match is held out in turn: the models are fitted on the other six (every half degraded
 with --seeds seeds, every --step-th frame kept) and judged on the held-out match, degraded with a
-seed no training copy used. The dead-ball model is a logistic regression whose C is chosen by
-pooled held-out log loss. The team model comes in the kinds named by --team: a logistic
-regression (C chosen the same way), and gradient-boosted trees (M11d), whose settings in
-TREE_GRID are chosen the same way. Each kind becomes its own variant: 'v1' with the logistic
-team model, 'v1+trees' with the trees. The baseline's own rules are scored beside them on the
-same frames: "no ball means dead" and "the nearest player's team has it".
+seed no training copy used. Both models come in kinds, named by --dead and --team: a logistic
+regression (C chosen by pooled held-out log loss) and gradient-boosted trees (settings in TREES,
+chosen the same way); the team model also has 'trees-wide', a larger tree model. Every pair of a
+dead-ball kind and a team kind is a variant: 'v1' for two logistic models, 'v1+trees' for a tree
+team model (adopted in M11d), '+deadtrees' for a tree dead-ball model. The baseline's own rules
+are scored beside them on the same frames: "no ball means dead" and "the nearest player's team
+has it".
 
 The decoder (possession.decode) then turns those held-out probabilities into labels for every
 setting of a grid of its three costs, and each setting is scored on each match with the official
@@ -27,15 +28,18 @@ Last, the models are refitted on all seven matches and written, with the chosen 
 models/possession_<variant>.json.
 
 All of this runs for every design of the features named (possession.models.DESIGNS) on the same
-degraded halves. Each variant other than v1 is then set against v1 match by match, and the
-adoption rule fixed before the run is applied: a variant replaces v1 only if its held-out
-spellF1 at +/-1 s is at least 0.01 higher, it is better on at least 5 of the 7 matches, it loses
-nothing at +/-0.5 s or +/-2 s, and its macroF1 falls by at most 0.005.
+degraded halves. Each variant is then set against the reference (--reference; the adopted
+v1+trees by default) match by match, and the adoption rule fixed before the run is applied: a
+variant replaces the reference only if its held-out spellF1 at +/-1 s is at least 0.01 higher,
+it is better on at least 5 of the 7 matches, it loses nothing at +/-0.5 s or +/-2 s, and its
+macroF1 falls by at most 0.005. If several pass, the one with the highest held-out spellF1 at
++/-1 s is adopted.
 
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.
 
-    python scripts/train_models.py [--designs v1 [v2 ...]] [--team logistic [trees]]
+    python scripts/train_models.py [--designs v1 [v2]] [--dead logistic [trees]]
+                                   [--team trees [trees-wide logistic]] [--reference v1+trees]
                                    [--seeds 2] [--step 8] [--out-dir models] [--oracle]
 """
 
@@ -65,11 +69,17 @@ from possession.predictors import NOBODY, nearest_team, smooth  # noqa: E402
 pm = practice.pm
 PITCH = (105.0, 68.0)
 GRID = (0.01, 0.1, 1.0)
-TEAM_KINDS = ("logistic", "trees")
-# M11d: gradient-boosted team models, chosen among by held-out log loss like C.
-TREE_GRID = ({"max_iter": 200, "max_leaf_nodes": 31, "learning_rate": 0.1, "min_samples_leaf": 20},
-             {"max_iter": 300, "max_leaf_nodes": 63, "learning_rate": 0.05,
-              "min_samples_leaf": 100})
+DEAD_KINDS = ("logistic", "trees")
+TEAM_KINDS = ("logistic", "trees", "trees-wide")
+# Gradient-boosted settings per (model, kind), chosen among by held-out log loss like C.
+# ('team', 'trees') is the setting M11d chose from two (runs/20261109T0931Z-train_models) and
+# adopted; M11e tries a larger team model and trees for the dead-ball model.
+TREES = {("team", "trees"): ({"max_iter": 300, "max_leaf_nodes": 63, "learning_rate": 0.05,
+                              "min_samples_leaf": 100},),
+         ("team", "trees-wide"): ({"max_iter": 600, "max_leaf_nodes": 127, "learning_rate": 0.05,
+                                   "min_samples_leaf": 100},),
+         ("dead", "trees"): ({"max_iter": 300, "max_leaf_nodes": 63, "learning_rate": 0.05,
+                              "min_samples_leaf": 100},)}
 EVAL_SEED = 99
 TOLERANCES = (0.5, 1.0, 2.0)
 BASELINE_WINDOW = 50
@@ -160,26 +170,42 @@ def report_dead(label, p, y, rule):
     return log_loss(y, p)
 
 
+def _share_right(p, y):
+    return float(np.mean((p > 0.5) == y)) if len(y) else float("nan")
+
+
 def report_team(label, p, y, rule):
     has_nearest = rule["nearest"] != NOBODY
     print("team {:<34} logloss {:.4f} AUC {:.4f} acc {:.4f}; where a nearest player exists ours "
           "{:.4f} vs nearest {:.4f}; without one ours {:.4f} ({:.0%} of live frames)".format(
-              label, log_loss(y, p), roc_auc_score(y, p), np.mean((p > 0.5) == y),
-              np.mean((p[has_nearest] > 0.5) == y[has_nearest]),
+              label, log_loss(y, p), roc_auc_score(y, p), _share_right(p, y),
+              _share_right(p[has_nearest], y[has_nearest]),
               np.mean((rule["nearest"][has_nearest] == HOME) == y[has_nearest]),
-              np.mean((p[~has_nearest] > 0.5) == y[~has_nearest]), np.mean(~has_nearest)))
+              _share_right(p[~has_nearest], y[~has_nearest]), np.mean(~has_nearest)))
     return log_loss(y, p)
 
 
-def team_candidates(kind, version):
-    """[(label, fitter)]: the team models of one kind, chosen among by held-out log loss."""
+def candidates(model, kind, version):
+    """[(label, fitter)]: the fits of one kind for model ('dead' or 'team'), chosen among by
+    held-out log loss."""
     if kind == "logistic":
         return [("logistic C={:g}".format(C),
                  lambda X, y, C=C: fit(X, y, C=C, version=version)) for C in GRID]
-    return [("trees {max_iter}x{max_leaf_nodes} lr {learning_rate:g} leaf>={min_samples_leaf}"
-             .format(**params), lambda X, y, params=params: fit_trees(X, y, version=version,
-                                                                      **params))
-            for params in TREE_GRID]
+    return [("{} {max_iter}x{max_leaf_nodes} lr {learning_rate:g} leaf>={min_samples_leaf}"
+             .format(kind, **params), lambda X, y, params=params: fit_trees(
+                 X, y, version=version, **params))
+            for params in TREES[(model, kind)]]
+
+
+def choose(model, kind, train, held_out, matches, version, rule):
+    """(label, held-out folds, final fit on all matches) of the best candidate of one kind."""
+    report = report_dead if model == "dead" else report_team
+    results = {}
+    for label, fitter in candidates(model, kind, version):
+        folds, p, y = lomo(train, held_out, matches, model, fitter)
+        results[label] = (report(label, p, y, rule), folds, fitter)
+    chosen = min(results, key=lambda label: results[label][0])
+    return chosen, results[chosen][1], results[chosen][2](*stack(train, matches, model))
 
 
 def decoded(log_ps, settings):
@@ -370,70 +396,77 @@ def oracle_headroom(held_out, oof, matches):
             time.time() - start))
 
 
-def variant_name(version, kind):
-    """'v1' for the logistic team model, 'v1+trees' for the gradient-boosted one."""
-    return version if kind == "logistic" else "{}+{}".format(version, kind)
+def variant_name(version, dead_kind, team_kind):
+    """'v1' with logistic models; '+trees' or '+trees-wide' for a tree team model, '+deadtrees'
+    for a tree dead-ball model: 'v1+trees' is the one adopted in M11d."""
+    name = version
+    if team_kind != "logistic":
+        name += "+" + team_kind
+    if dead_kind != "logistic":
+        name += "+dead" + dead_kind
+    return name
 
 
-def fit_design(version, team_kinds, train, held_out, matches, args, start):
-    """One design: the dead-ball model once, then for each kind of team model its decoder, error
-    report and file models/possession_<variant>.json.
+def fit_design(version, dead_kinds, team_kinds, train, held_out, matches, args, start):
+    """One design: each kind of dead-ball and of team model chosen and fitted once, then for every
+    pair of them a decoder, an error report and a file models/possession_<variant>.json.
 
     held_out carries this design's feature matrix under 'X'. Returns {variant: fit_decoder's
     summary}.
     """
     print("\n===== design {}: {} columns =====".format(version, len(design_names(version))))
     rule = rules(held_out, matches)
-    dead = {}
-    for C in GRID:
-        folds, p, y = lomo(train, held_out, matches, "dead",
-                           lambda X, y, C=C: fit(X, y, C=C, version=version))
-        dead[C] = (report_dead("logistic C={:g}".format(C), p, y, rule), folds)
-    best_dead = min(GRID, key=lambda c: dead[c][0])
-    dead_model = fit(*stack(train, matches, "dead"), C=best_dead, version=version)
-    print("chosen dead C={:g} ({:.0f} s)".format(best_dead, time.time() - start))
+    chosen = {}
+    for model, kinds in (("dead", dead_kinds), ("team", team_kinds)):
+        for kind in kinds:
+            chosen[(model, kind)] = choose(model, kind, train, held_out, matches, version, rule)
+            print("chosen {} {} ({:.0f} s)".format(model, chosen[(model, kind)][0],
+                                                   time.time() - start))
 
     summaries = {}
-    for kind in team_kinds:
-        team = {}
-        for label, fitter in team_candidates(kind, version):
-            folds, p, y = lomo(train, held_out, matches, "team", fitter)
-            team[label] = (report_team(label, p, y, rule), folds, fitter)
-        chosen = min(team, key=lambda label: team[label][0])
-        variant = variant_name(version, kind)
-        print("\n----- {}: team {} ({:.0f} s) -----".format(variant, chosen, time.time() - start))
+    for dead_kind in dead_kinds:
+        for team_kind in team_kinds:
+            dead_label, dead_folds, dead_model = chosen[("dead", dead_kind)]
+            team_label, team_folds, team_model = chosen[("team", team_kind)]
+            variant = variant_name(version, dead_kind, team_kind)
+            print("\n----- {}: dead {}, team {} ({:.0f} s) -----".format(
+                variant, dead_label, team_label, time.time() - start))
 
-        oof = {m: [log_state_probabilities({"dead": dead[best_dead][1][m],
-                                            "team": team[chosen][1][m]}, X)
-                   for X in halves_of(held_out[m], "X")] for m in matches}
-        decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof, matches)
-        report_errors(held_out, held_out_codes, matches)
-        if args.oracle:
-            oracle_headroom(held_out, oof, matches)
+            oof = {m: [log_state_probabilities({"dead": dead_folds[m], "team": team_folds[m]},
+                                               X) for X in halves_of(held_out[m], "X")]
+                   for m in matches}
+            decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof,
+                                                                           matches)
+            report_errors(held_out, held_out_codes, matches)
+            if args.oracle:
+                oracle_headroom(held_out, oof, matches)
 
-        models = {"design": version, "dead": dead_model,
-                  "team": team[chosen][2](*stack(train, matches, "team")),
-                  "decoder": decoder,
-                  "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
-                                "label_tolerance_s": 1.0, "pitch": list(PITCH),
-                                "scikit_learn": sklearn_version, "team_model": chosen,
-                                "decoder_grid": {k: list(v) for k, v in DECODER_AXES.items()},
-                                "practice_range": practice_range}}
-        out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
-        os.makedirs(args.out_dir, exist_ok=True)
-        save(models, out)
-        print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
-                                                  time.time() - start))
-        summaries[variant] = summary
+            models = {"design": version, "dead": dead_model, "team": team_model,
+                      "decoder": decoder,
+                      "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
+                                    "label_tolerance_s": 1.0, "pitch": list(PITCH),
+                                    "scikit_learn": sklearn_version, "dead_model": dead_label,
+                                    "team_model": team_label,
+                                    "decoder_grid": {k: list(v)
+                                                     for k, v in DECODER_AXES.items()},
+                                    "practice_range": practice_range}}
+            out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
+            os.makedirs(args.out_dir, exist_ok=True)
+            save(models, out)
+            print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
+                                                      time.time() - start))
+            summaries[variant] = summary
     return summaries
 
 
-def compare(summaries, matches):
-    """Each variant (a design, a kind of team model) against v1, match by match, with the
-    adoption rule fixed before the run."""
-    reference = summaries["v1"]
+def compare(summaries, matches, reference_name="v1"):
+    """Each variant against the reference, match by match, with the adoption rule fixed before
+    the run. If several variants pass, the one with the highest held-out spellF1 at +/-1 s is
+    the one to adopt. Returns its name, or None."""
+    reference = summaries[reference_name]
+    passing = []
     for version, summary in summaries.items():
-        if version == "v1":
+        if version == reference_name:
             continue
         gains = {m: summary["per_match"][m] - reference["per_match"][m] for m in matches}
         better = sum(gain > 0 for gain in gains.values())
@@ -441,21 +474,31 @@ def compare(summaries, matches):
         macro = summary["pooled"][1.0][1] - reference["pooled"][1.0][1]
         adopt = (spell[1.0] >= 0.01 and better >= 5 and spell[0.5] >= 0 and spell[2.0] >= 0
                  and macro >= -0.005)
-        print("\n{} against v1, held out: spellF1 {:+.4f} at +/-1 s ({:+.4f} at 0.5 s, {:+.4f} "
+        if adopt:
+            passing.append(version)
+        print("\n{} against {}, held out: spellF1 {:+.4f} at +/-1 s ({:+.4f} at 0.5 s, {:+.4f} "
               "at 2 s), macroF1 {:+.4f}; better on {} of {} matches".format(
-                  version, spell[1.0], spell[0.5], spell[2.0], macro, better, len(matches)))
+                  version, reference_name, spell[1.0], spell[0.5], spell[2.0], macro, better,
+                  len(matches)))
         print("  per match: " + ", ".join("{} {:+.3f}".format(m, g) for m, g in gains.items()))
         print("  adoption rule (spellF1 +0.01 or more at 1 s, better on 5 or more matches, no "
               "loss at 0.5 s or 2 s, macroF1 down 0.005 at most): {}".format(
-                  "ADOPT " + version if adopt else "keep v1"))
+                  "ADOPT " + version if adopt else "keep " + reference_name))
+    winner = max(passing, key=lambda v: summaries[v]["pooled"][1.0][0]) if passing else None
+    print("\nverdict: {}".format("adopt " + winner if winner else "keep " + reference_name))
+    return winner
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
     parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
-    # M11d sets the gradient-boosted team model against the logistic one on the same frames.
-    parser.add_argument("--team", nargs="+", default=["logistic", "trees"], choices=TEAM_KINDS)
+    # M11d adopted the tree team model (v1+trees). M11e sets against it a larger tree team model
+    # and a tree dead-ball model, on the same frames.
+    parser.add_argument("--dead", nargs="+", default=["logistic", "trees"], choices=DEAD_KINDS)
+    parser.add_argument("--team", nargs="+", default=["trees", "trees-wide"], choices=TEAM_KINDS)
+    parser.add_argument("--reference", default="v1+trees",
+                        help="the variant the others are set against")
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
@@ -476,10 +519,13 @@ def main():
     summaries = {}
     for version in args.designs:
         view = {m: dict(part, X=part["X"][version]) for m, part in held_out.items()}
-        summaries.update(fit_design(version, args.team, train[version], view, matches, args,
-                                    start))
-    if "v1" in summaries and len(summaries) > 1:
-        compare(summaries, matches)
+        summaries.update(fit_design(version, args.dead, args.team, train[version], view,
+                                    matches, args, start))
+    if args.reference in summaries and len(summaries) > 1:
+        compare(summaries, matches, args.reference)
+    else:
+        print("\nno comparison: the reference {} was not fitted in this run".format(
+            args.reference))
     print("\ndone in {:.0f} s".format(time.time() - start))
     return 0
 
