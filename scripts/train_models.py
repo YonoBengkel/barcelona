@@ -33,11 +33,11 @@ again with every player speed scaled by each factor, each match decoded with its
 setting, and the score and the share of frames called dead are printed per factor.
 
 M11g fitted the simulator's player noise to the match's player speeds
-(scripts/calibrate_simulator.py --players), which changes the practice ground itself. With
---old-ground (the default) the same kinds are also fitted on the ground as it was before
-(OLD_GROUND), with their decoder chosen there as before, and that pipeline is scored on this
-run's held-out matches: the reference the new ground's pipeline is set against, on the same
-frames, by the same rule.
+(scripts/calibrate_simulator.py --players), and M11h where its ball goes missing; each changes the
+practice ground itself. With --old-ground (the default) the same kinds are also fitted on the
+ground as it was before the latest change (OLD_GROUND), with their decoder chosen there as before,
+and that pipeline is scored on this run's held-out matches: the reference the new ground's
+pipeline is set against, on the same frames, by the same rule.
 
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
 models/possession_<variant>.json.
@@ -115,9 +115,14 @@ WIDE_DEAD_BIAS = (1.5, 2.0, 2.5, 3.0)
 # The speed check (M11f) scales the players' speeds of the held-out matches by these factors.
 SPEED_FACTORS = (0.9, 0.8)
 PLAYER_SPEEDS = ("speed_all", "speed_home", "speed_away")
-# The practice ground of M9 to M11f, before M11g fitted the players' noise to the match
-# (--old-ground): everything as now but the players' 0.15 m of noise.
-OLD_GROUND = replace(DegradeParams(), player_noise_m=0.15)
+# The practice ground before the latest change to it (--old-ground). M11g fitted the players'
+# noise to the match (0.15 m before, none since); M11h refitted where the ball goes missing,
+# against the players' speeds by ball state. So the old ground is M11g's, every parameter that
+# M11h's search moves written out.
+OLD_GROUND = replace(DegradeParams(), player_noise_m=0.0, line_weight=0.038, box_weight=0.801,
+                     slow_weight=0.405, crowd_weight=0.716, dead_weight=0.0, outside_visible=0.187,
+                     short_gap_share=0.167, long_gap_median_s=8.0, long_gap_sigma=0.630)
+OLD_GROUND_NOTE = "M11g's, its ball gaps placed without regard to stoppages"
 OLD_SUFFIX = " (old ground)"
 
 
@@ -605,16 +610,16 @@ def fit_design(version, dead_kinds, team_kinds, train, held_out, matches, args, 
 
 def fit_old_ground(version, dead_kinds, team_kinds, train, old_held_out, held_out, matches,
                    start):
-    """The pipeline the practice ground before M11g (OLD_GROUND) makes, scored on this run's
-    held-out matches: the reference for a change of the ground itself.
+    """The pipeline the practice ground before its latest change (OLD_GROUND) makes, scored on
+    this run's held-out matches: the reference for a change of the ground itself.
 
     train and old_held_out are built on OLD_GROUND. Each kind is chosen and fitted there, and each
-    pair's decoder is chosen there, nested, on the base grid, exactly as before M11g. The folds
+    pair's decoder is chosen there, nested, on the base grid, exactly as before. The folds
     then weigh held_out, this run's held-out matches, and each match is decoded with the setting
     chosen for it on the old ground. Returns {'<variant> (old ground)': summary} for compare().
     """
-    print("\n===== design {} on the practice ground before M11g (player noise {:g} m) =====".format(
-        version, OLD_GROUND.player_noise_m))
+    print("\n===== design {} on the practice ground before ({}) =====".format(
+        version, OLD_GROUND_NOTE))
     rule = rules(old_held_out, matches)
     chosen = {}
     for model, kinds in (("dead", dead_kinds), ("team", team_kinds)):
@@ -690,8 +695,8 @@ def main():
     parser.add_argument("--grids", nargs="+", default=["base"], choices=GRIDS,
                         help="decoder grids to search, each a variant of its own")
     parser.add_argument("--old-ground", action=argparse.BooleanOptionalAction, default=True,
-                        help="also fit the pipeline on the practice ground before M11g and score "
-                             "it on this run's held-out matches, as the reference")
+                        help="also fit the pipeline on the practice ground before its latest "
+                             "change and score it on this run's held-out matches, as the reference")
     parser.add_argument("--reference", default=None,
                         help="the variant the others are set against; by default the first pair "
                              "of kinds on the old ground, or v1+trees-wide+deadtrees without it")

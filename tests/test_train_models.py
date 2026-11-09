@@ -213,7 +213,7 @@ def test_the_old_ground_is_fitted_there_and_scored_on_this_runs_matches(monkeypa
     summary = old["v1 (old ground)"]
     assert set(summary["pooled"]) == {0.5, 1.0, 2.0} and set(summary["per_match"]) == set(matches)
     printed = capsys.readouterr().out
-    assert "practice ground before M11g" in printed and "on this run's held-out matches" in printed
+    assert "practice ground before" in printed and "on this run's held-out matches" in printed
 
 
 def test_scoring_fixed_settings_reproduces_the_nested_score(monkeypatch):
