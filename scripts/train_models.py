@@ -201,8 +201,9 @@ def fit_decoder(held_out, oof, matches):
                 rates["labels"].append(spell_rate(gt, gt))
                 rates["ours"].append(spell_rate(nested, gt))
 
-    print("\ndecoder: {} settings of {}, each match's chosen on the other six ({:.0f} s)".format(
-        len(DECODER_GRID), ", ".join(DECODER_AXES), time.time() - start))
+    print("\ndecoder: {} settings of {}, each match's chosen on the other six; C was chosen once "
+          "on all seven ({:.0f} s)".format(len(DECODER_GRID), ", ".join(DECODER_AXES),
+                                           time.time() - start))
     print("{:<10} {:>28} {:>28} {:>28}".format("labels", "ours, held out",
                                                "ours, set on all seven", "baseline_smooth50"))
     for tolerance in TOLERANCES:
