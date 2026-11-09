@@ -86,8 +86,9 @@ manifest as one zip ([kaggle/README.md](kaggle/README.md)). Set the job as `COMM
 notebook cell:
 
 ```bash
-scripts/train_models.py        # fit the models and choose the decoder, match by match; write
-                               # models/possession_v1.json
+scripts/train_models.py        # fit the models and choose the decoder, match by match, for each
+                               # feature design (v1, v2); write models/possession_<design>.json
+                               # and set each design against v1 by a rule fixed in the code
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)

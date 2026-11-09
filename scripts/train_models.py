@@ -19,10 +19,18 @@ It then prints where the held-out pipeline goes wrong (possession.diagnose): its
 errors by ball state, and the cause of every possession it misses.
 
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
-models/possession_v1.json. Public data only; reads no match data. A job for Kaggle
-(kaggle/README.md), not for the team's laptop.
+models/possession_<design>.json.
 
-    python scripts/train_models.py [--seeds 2] [--step 8] [--out models/possession_v1.json]
+All of this runs for every design of the features named (possession.models.DESIGNS) on the same
+degraded halves. Each design after v1 is then set against v1 match by match, and the adoption
+rule fixed before the run is applied: a design replaces v1 only if its held-out spellF1 at
++/-1 s is at least 0.01 higher, it is better on at least 5 of the 7 matches, it loses nothing at
++/-0.5 s or +/-2 s, and its macroF1 falls by at most 0.005.
+
+Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
+laptop.
+
+    python scripts/train_models.py [--designs v1 v2] [--seeds 2] [--step 8] [--out-dir models]
 """
 
 import argparse
@@ -44,7 +52,8 @@ from possession import external as ex  # noqa: E402
 from possession import practice  # noqa: E402
 from possession.decode import viterbi  # noqa: E402
 from possession.features import FPS, HOME, compute, swapped  # noqa: E402
-from possession.models import design, fit, log_state_probabilities, probability, save  # noqa: E402
+from possession.models import (DESIGNS, design, design_names, fit,  # noqa: E402
+                               log_state_probabilities, probability, save)
 from possession.predictors import NOBODY, nearest_team, smooth  # noqa: E402
 
 pm = practice.pm
@@ -60,34 +69,42 @@ DECODER_AXES = {"team_switch": (8, 16, 32, 64, 128, 256, 512),
 DECODER_GRID = tuple(itertools.product(*DECODER_AXES.values()))
 
 
-def build(match_ids, seeds, step):
-    """Training rows per match, and the full held-out halves per match for evaluation."""
-    train = {m: {"dead": ([], []), "team": ([], [])} for m in match_ids}
+def build(match_ids, seeds, step, designs=("v1",)):
+    """Training rows per design and match, and the held-out halves per match for evaluation,
+    with one feature matrix per design under 'X'. The features are computed once per half and
+    only the design differs, so every design sees exactly the same frames."""
+    train = {v: {m: {"dead": ([], []), "team": ([], [])} for m in match_ids} for v in designs}
     for seed in range(seeds):
         for case in practice.cases(match_ids, tolerance_s=1.0, seed=seed):
             labels = case["labels"]
-            X = design(compute(case["half"], PITCH)[0]).astype(np.float32)
-            mirrored = design(compute(swapped(case["half"]), PITCH)[0]).astype(np.float32)
-            rows = train[case["match"]]
+            features = compute(case["half"], PITCH)[0]
+            mirrored_features = compute(swapped(case["half"]), PITCH)[0]
             every = np.arange(0, len(labels), step)
-            rows["dead"][0].append(X[every])
-            rows["dead"][1].append(labels[every] == "D")
             live = np.flatnonzero(labels != "D")[::step]
-            rows["team"][0].extend([X[live], mirrored[live]])
-            rows["team"][1].extend([labels[live] == "H", labels[live] == "A"])
+            for version in designs:
+                X = design(features, version).astype(np.float32)
+                mirrored = design(mirrored_features, version).astype(np.float32)
+                rows = train[version][case["match"]]
+                rows["dead"][0].append(X[every])
+                rows["dead"][1].append(labels[every] == "D")
+                rows["team"][0].extend([X[live], mirrored[live]])
+                rows["team"][1].extend([labels[live] == "H", labels[live] == "A"])
     held_out = {}
     for case in practice.cases(match_ids, tolerance_s=1.0, seed=EVAL_SEED):
-        X = design(compute(case["half"], PITCH)[0]).astype(np.float32)
-        part = held_out.setdefault(case["match"], {"X": [], "labels": [], "nearest": [],
-                                                   "ball_known": [], "lengths": []})
-        part["X"].append(X)
+        features = compute(case["half"], PITCH)[0]
+        part = held_out.setdefault(case["match"], {"X": {v: [] for v in designs}, "labels": [],
+                                                   "nearest": [], "ball_known": [],
+                                                   "lengths": []})
+        for version in designs:
+            part["X"][version].append(design(features, version).astype(np.float32))
         part["labels"].append(case["labels"])
         part["nearest"].append(nearest_team(case["half"]))
-        part["ball_known"].append(X[:, 0] + X[:, 1] > 0)  # ball_seen or ball_bridged
-        part["lengths"].append(len(X))
+        part["ball_known"].append(features[:, 0] + features[:, 1] > 0)  # seen or bridged
+        part["lengths"].append(len(features))
     for part in held_out.values():
-        for key in ("X", "labels", "nearest", "ball_known"):
+        for key in ("labels", "nearest", "ball_known"):
             part[key] = np.concatenate(part[key])
+        part["X"] = {version: np.concatenate(X) for version, X in part["X"].items()}
     return train, held_out
 
 
@@ -102,15 +119,15 @@ def stack(train, matches, model):
     return X, y
 
 
-def evaluate(train, held_out, matches, C):
+def evaluate(train, held_out, matches, C, version="v1"):
     """Pooled held-out predictions over all folds for one C, and each fold's models."""
     pooled = {"dead_p": [], "dead_y": [], "team_p": [], "team_y": [], "nearest": [],
               "known": [], "no_ball": []}
     folds = {}
     for match in matches:
         others = [m for m in matches if m != match]
-        dead_model = fit(*stack(train, others, "dead"), C=C)
-        team_model = fit(*stack(train, others, "team"), C=C)
+        dead_model = fit(*stack(train, others, "dead"), C=C, version=version)
+        team_model = fit(*stack(train, others, "team"), C=C, version=version)
         folds[match] = {"dead": dead_model, "team": team_model}
         part = held_out[match]
         live = part["labels"] != "D"
@@ -176,7 +193,11 @@ def spell_rate(codes, gt_codes):
 
 
 def fit_decoder(held_out, oof, matches):
-    """Choose the decoder setting, nested by match; report it, and return (setting, range)."""
+    """Choose the decoder setting, nested by match, and report it.
+
+    Returns (setting, practice range, held-out codes per match, summary), where summary holds
+    the held-out (spellF1, macroF1) per label tolerance and the held-out spellF1 per match.
+    """
     start = time.time()
     table = [dict() for _ in DECODER_GRID]
     for match in matches:
@@ -216,8 +237,10 @@ def fit_decoder(held_out, oof, matches):
         cells = ["spellF1 {:.4f}  mF1 {:.4f}".format(*practice.pooled(rows[(name, tolerance)]))
                  for name in ("nested", "all seven", "baseline")]
         print("+/-{:<7} {:>28} {:>28} {:>28}".format("{:g} s".format(tolerance), *cells))
-    per_match = [practice.pooled([part])[0] for part in rows[("nested", 1.0)]]
-    print("held-out spellF1 per match: {:.3f}-{:.3f}".format(min(per_match), max(per_match)))
+    per_match = {match: practice.pooled([part])[0]
+                 for match, part in zip(matches, rows[("nested", 1.0)])}
+    print("held-out spellF1 per match: " + ", ".join(
+        "{} {:.3f}".format(match, value) for match, value in per_match.items()))
     picks = collections.Counter(DECODER_GRID[k] for k in chosen.values())
     print("settings chosen per match: " + "; ".join(
         "{} x{}".format(dict(zip(DECODER_AXES, setting)), n) for setting, n in picks.most_common()))
@@ -237,7 +260,9 @@ def fit_decoder(held_out, oof, matches):
                                                  round(float(length.max()), 2)]}
         print("possessions, {}: {:.1f}-{:.1f} per 10 min, mean {:.1f}-{:.1f} s".format(
             name, rate.min(), rate.max(), length.min(), length.max()))
-    return setting, practice_range, held_out_codes
+    summary = {"pooled": {t: practice.pooled(rows[("nested", t)]) for t in TOLERANCES},
+               "per_match": per_match}
+    return setting, practice_range, held_out_codes, summary
 
 
 def report_errors(held_out, predicted, matches):
@@ -272,23 +297,15 @@ def report_errors(held_out, predicted, matches):
     print("dead-ball share per match, true/ours: " + ", ".join(shares))
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--seeds", type=int, default=2)
-    parser.add_argument("--step", type=int, default=8)
-    parser.add_argument("--out", default=os.path.join(ROOT, "models", "possession_v1.json"))
-    args = parser.parse_args()
-    matches = sorted(ex.MATCHES)
+def fit_design(version, train, held_out, matches, args, start):
+    """Models, decoder and error report for one design; writes models/possession_<version>.json.
 
-    start = time.time()
-    train, held_out = build(matches, args.seeds, args.step)
-    print("built rows in {:.0f} s: dead {}, team {}".format(
-        time.time() - start, len(stack(train, matches, "dead")[1]),
-        len(stack(train, matches, "team")[1])))
-
+    held_out carries this design's feature matrix under 'X'. Returns fit_decoder's summary.
+    """
+    print("\n===== design {}: {} columns =====".format(version, len(design_names(version))))
     losses, folds = {}, {}
     for C in GRID:
-        result, folds[C] = evaluate(train, held_out, matches, C)
+        result, folds[C] = evaluate(train, held_out, matches, C, version)
         losses[C] = report(C, result)
     best_dead = min(GRID, key=lambda c: losses[c][0])
     best_team = min(GRID, key=lambda c: losses[c][1])
@@ -298,21 +315,69 @@ def main():
     oof = {m: [log_state_probabilities({"dead": folds[best_dead][m]["dead"],
                                         "team": folds[best_team][m]["team"]}, X)
                for X in halves_of(held_out[m], "X")] for m in matches}
-    decoder, practice_range, held_out_codes = fit_decoder(held_out, oof, matches)
+    decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof, matches)
     report_errors(held_out, held_out_codes, matches)
 
-    models = {"dead": fit(*stack(train, matches, "dead"), C=best_dead),
-              "team": fit(*stack(train, matches, "team"), C=best_team),
+    models = {"design": version,
+              "dead": fit(*stack(train, matches, "dead"), C=best_dead, version=version),
+              "team": fit(*stack(train, matches, "team"), C=best_team, version=version),
               "decoder": decoder,
               "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
                             "label_tolerance_s": 1.0, "pitch": list(PITCH),
                             "scikit_learn": sklearn_version,
                             "decoder_grid": {k: list(v) for k, v in DECODER_AXES.items()},
                             "practice_range": practice_range}}
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    save(models, args.out)
-    print("wrote {} ({:.0f} s in all)".format(os.path.relpath(args.out, ROOT),
-                                              time.time() - start))
+    out = os.path.join(args.out_dir, "possession_{}.json".format(version))
+    os.makedirs(args.out_dir, exist_ok=True)
+    save(models, out)
+    print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT), time.time() - start))
+    return summary
+
+
+def compare(summaries, matches):
+    """Each design against v1, match by match, with the adoption rule fixed before the run."""
+    reference = summaries["v1"]
+    for version, summary in summaries.items():
+        if version == "v1":
+            continue
+        gains = {m: summary["per_match"][m] - reference["per_match"][m] for m in matches}
+        better = sum(gain > 0 for gain in gains.values())
+        spell = {t: summary["pooled"][t][0] - reference["pooled"][t][0] for t in TOLERANCES}
+        macro = summary["pooled"][1.0][1] - reference["pooled"][1.0][1]
+        adopt = (spell[1.0] >= 0.01 and better >= 5 and spell[0.5] >= 0 and spell[2.0] >= 0
+                 and macro >= -0.005)
+        print("\n{} against v1, held out: spellF1 {:+.4f} at +/-1 s ({:+.4f} at 0.5 s, {:+.4f} "
+              "at 2 s), macroF1 {:+.4f}; better on {} of {} matches".format(
+                  version, spell[1.0], spell[0.5], spell[2.0], macro, better, len(matches)))
+        print("  per match: " + ", ".join("{} {:+.3f}".format(m, g) for m, g in gains.items()))
+        print("  adoption rule (spellF1 +0.01 or more at 1 s, better on 5 or more matches, no "
+              "loss at 0.5 s or 2 s, macroF1 down 0.005 at most): {}".format(
+                  "ADOPT " + version if adopt else "keep v1"))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--designs", nargs="+", default=["v1", "v2"], choices=sorted(DESIGNS))
+    parser.add_argument("--seeds", type=int, default=2)
+    parser.add_argument("--step", type=int, default=8)
+    parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
+    args = parser.parse_args()
+    matches = sorted(ex.MATCHES)
+
+    start = time.time()
+    train, held_out = build(matches, args.seeds, args.step, args.designs)
+    first = args.designs[0]
+    print("built rows in {:.0f} s: dead {}, team {}".format(
+        time.time() - start, len(stack(train[first], matches, "dead")[1]),
+        len(stack(train[first], matches, "team")[1])))
+
+    summaries = {}
+    for version in args.designs:
+        view = {m: dict(part, X=part["X"][version]) for m, part in held_out.items()}
+        summaries[version] = fit_design(version, train[version], view, matches, args, start)
+    if "v1" in summaries and len(summaries) > 1:
+        compare(summaries, matches)
+    print("\ndone in {:.0f} s".format(time.time() - start))
     return 0
 
 

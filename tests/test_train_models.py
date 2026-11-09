@@ -3,7 +3,9 @@
 The real search runs on Kaggle for half an hour; this catches a broken plumbing in a second.
 """
 
+import contextlib
 import importlib.util
+import io
 import itertools
 import os
 
@@ -49,7 +51,7 @@ def test_the_decoder_search_runs_end_to_end(monkeypatch, capsys):
     monkeypatch.setattr(train_models, "DECODER_AXES", axes)
     monkeypatch.setattr(train_models, "DECODER_GRID", tuple(itertools.product(*axes.values())))
 
-    setting, practice_range, predicted = train_models.fit_decoder(held_out, oof, matches)
+    setting, practice_range, predicted, summary = train_models.fit_decoder(held_out, oof, matches)
     train_models.report_errors(held_out, predicted, matches)
 
     assert set(setting) == set(axes) and setting["team_switch"] in axes["team_switch"]
@@ -57,6 +59,29 @@ def test_the_decoder_search_runs_end_to_end(monkeypatch, capsys):
         low, high = practice_range[name]["spells_per_10min"]
         assert 0 < low <= high
     assert all(len(predicted[m]) == len(held_out[m]["labels"]) + 1 for m in matches)
+    assert set(summary["per_match"]) == set(matches) and set(summary["pooled"]) == {0.5, 1.0, 2.0}
     printed = capsys.readouterr().out
     assert "baseline_smooth50" in printed and "chosen on all seven" in printed
     assert "possessions at IoU 0.5" in printed and "dead-ball share per match" in printed
+
+
+def test_a_design_is_adopted_only_by_the_rule():
+    matches = ["M1", "M2", "M3", "M4", "M5", "M6", "M7"]
+    reference = {"pooled": {t: (0.60, 0.88) for t in (0.5, 1.0, 2.0)},
+                 "per_match": {m: 0.60 for m in matches}}
+
+    def candidate(gain, better_on, macro=0.0):
+        return {"pooled": {t: (0.60 + gain, 0.88 + macro) for t in (0.5, 1.0, 2.0)},
+                "per_match": {m: 0.60 + (0.02 if i < better_on else -0.01)
+                              for i, m in enumerate(matches)}}
+
+    def verdict(summary):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            train_models.compare({"v1": reference, "v2": summary}, matches)
+        return "ADOPT v2" in out.getvalue()
+
+    assert verdict(candidate(0.02, 6))
+    assert not verdict(candidate(0.005, 6))          # too small a gain
+    assert not verdict(candidate(0.02, 4))           # better on too few matches
+    assert not verdict(candidate(0.02, 6, -0.01))    # costs too much macroF1

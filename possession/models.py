@@ -31,21 +31,36 @@ CONTEXT = (("speed_all", 5.0), ("ball_seen", 5.0), ("ball_speed", 2.5), ("near_d
            ("width_home", 5.0), ("width_away", 5.0), ("forward_home", 5.0),
            ("forward_away", 5.0), ("ball_velocity_home", 2.5), ("crowd2_home", 2.5),
            ("crowd2_away", 2.5), ("advance_home", 5.0), ("advance_away", 5.0))
-DESIGN_NAMES = NAMES + tuple("{}_ctx{:g}s".format(name, seconds) for name, seconds in CONTEXT)
+# M11a: one-second context beside the longer one, so that a possession or a stoppage of a second
+# or two is not averaged away (possession.diagnose: 73% of the missed possessions went to the
+# wrong team or were merged with a neighbour, most of them short).
+SHORT_CONTEXT = (("near_diff", 1.0), ("near_home", 1.0), ("near_away", 1.0),
+                 ("crowd2_home", 1.0), ("crowd2_away", 1.0), ("ball_seen", 1.0))
+DESIGNS = {"v1": CONTEXT, "v2": CONTEXT + SHORT_CONTEXT}
 
 
-def design(features):
-    """(frames, len(DESIGN_NAMES)) float64: log1p on skewed features, then context means."""
+def design_names(version="v1"):
+    """The columns design() makes for one version of the design."""
+    return NAMES + tuple("{}_ctx{:g}s".format(name, seconds)
+                         for name, seconds in DESIGNS[version])
+
+
+DESIGN_NAMES = design_names("v1")
+
+
+def design(features, version="v1"):
+    """(frames, len(design_names(version))) float64: log1p on skewed features, then context
+    means."""
     X = features.astype(np.float64)
     index = {name: i for i, name in enumerate(NAMES)}
     for name in LOG1P:
         X[:, index[name]] = np.log1p(np.maximum(X[:, index[name]], 0.0))
     context = [rolling_mean(X[:, index[name]], int(seconds * FPS / 2))
-               for name, seconds in CONTEXT]
+               for name, seconds in DESIGNS[version]]
     return np.column_stack([X] + context)
 
 
-def fit(X, y, C=1.0):
+def fit(X, y, C=1.0, version="v1"):
     """A JSON-ready logistic regression: NaN imputed by the training mean, then standardised."""
     from sklearn.linear_model import LogisticRegression
 
@@ -56,8 +71,9 @@ def fit(X, y, C=1.0):
     scale = np.where(scale > 0, scale, 1.0)
     model = LogisticRegression(C=C, max_iter=5000)
     model.fit((X - mean) / scale, y)
-    return {"names": list(DESIGN_NAMES), "C": C, "mean": mean.tolist(), "scale": scale.tolist(),
-            "coef": model.coef_[0].tolist(), "intercept": float(model.intercept_[0])}
+    return {"names": list(design_names(version)), "C": C, "mean": mean.tolist(),
+            "scale": scale.tolist(), "coef": model.coef_[0].tolist(),
+            "intercept": float(model.intercept_[0])}
 
 
 def score(model, X):
@@ -112,10 +128,14 @@ def save(models, path):
 
 
 def load(path):
+    """The models, checked against the design they name ('design', v1 when absent)."""
     with open(path) as handle:
         models = json.load(handle)
+    version = models.get("design", "v1")
+    if version not in DESIGNS:
+        raise ValueError("unknown design {}".format(version))
     for name in ("dead", "team"):
-        if tuple(models[name]["names"]) != DESIGN_NAMES:
+        if tuple(models[name]["names"]) != design_names(version):
             raise ValueError("{} model was fitted on other features than this code computes"
                              .format(name))
     return models

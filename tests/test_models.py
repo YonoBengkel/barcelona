@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from possession.features import NAMES
-from possession.models import DESIGN_NAMES, design, fit, load, log_sigmoid, \
-    log_state_probabilities, probability, save, state_probabilities
+from possession.models import DESIGN_NAMES, SHORT_CONTEXT, design, design_names, fit, load, \
+    log_sigmoid, log_state_probabilities, probability, save, state_probabilities
 
 
 def synthetic(n=3000, seed=0):
@@ -47,6 +47,23 @@ def test_log_evidence_matches_the_probabilities_and_stays_finite():
     log_p = log_state_probabilities(models, X)
     assert np.allclose(np.exp(log_p), state_probabilities(models, X), atol=1e-12)
     assert np.isfinite(log_sigmoid(np.array([-800.0, 0.0, 800.0]))).all()
+
+
+def test_the_second_design_adds_short_context_and_loads_by_name(tmp_path):
+    X1 = design(np.ones((50, len(NAMES)), dtype=np.float32))
+    X2 = design(np.ones((50, len(NAMES)), dtype=np.float32), "v2")
+    assert X2.shape[1] == len(design_names("v2")) == X1.shape[1] + len(SHORT_CONTEXT)
+    assert np.array_equal(X2[:, :X1.shape[1]], X1)  # v2 only appends columns
+    rng = np.random.default_rng(2)
+    X = rng.normal(size=(400, len(design_names("v2"))))
+    y = X[:, 0] > 0
+    models = {"design": "v2", "dead": fit(X, y, version="v2"), "team": fit(X, ~y, version="v2")}
+    save(models, str(tmp_path / "v2.json"))
+    assert load(str(tmp_path / "v2.json"))["design"] == "v2"
+    models["design"] = "v1"
+    save(models, str(tmp_path / "wrong.json"))
+    with pytest.raises(ValueError):
+        load(str(tmp_path / "wrong.json"))
 
 
 def test_loading_refuses_a_model_fitted_on_other_features(tmp_path):

@@ -83,7 +83,8 @@ def main():
     parts, agreement, states, calls, speeds = [], [], [], [], []
     for number, half in enumerate(halves(atd, half_video_blocks(GAME))):
         features = compute(half, pitch)[0]
-        labels = decode(log_state_probabilities(models, design(features)), models["decoder"])
+        X = design(features, models.get("design", "v1"))
+        labels = decode(log_state_probabilities(models, X), models["decoder"])
         parts.append((half["first_frame"], labels))
         states.append(diagnose.ball_states(features))
         calls.append(practice.codes(labels))
@@ -104,7 +105,8 @@ def main():
         return 1
     codes = pm.label_codes(table)
 
-    print("decoder {}".format(models["decoder"]))
+    print("models {} (design {}), decoder {}".format(
+        shown(args.models), models.get("design", "v1"), models["decoder"]))
     graded = codes != pm.X
     print("labels on the {} graded frames: {}; X on the other {}".format(
         int(graded.sum()), "  ".join("{} {:.1%}".format(name, np.mean(codes[graded] == index))
