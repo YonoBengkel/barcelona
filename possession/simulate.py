@@ -19,7 +19,9 @@ losses. How much each covariate weighs is fitted to the profile, never to the ma
 rate is solved for, so the hidden share matches the target whatever the weights. Stretches with the
 ball outside the lines can be hidden whole. Players vanish in gaps too, without the risk term.
 Noise drifts over about a second rather than jumping every frame: at 25 fps, 0.3 m of
-independent noise per frame alone would read as a 10 m/s ball.
+independent noise per frame alone would read as a 10 m/s ball. Only the ball gets it: fitted to
+the match's player speeds, the players' noise came out at none (M11g), because IDSSE's own
+tracking already moves about as the match's does.
 
 Every number lives in DegradeParams; scripts/calibrate_simulator.py fits them to the profile. The
 defaults below are its fit of 2026-11-08 (loss 16.1 -> 3.1): gap lengths, seen-run lengths,
@@ -62,9 +64,12 @@ class DegradeParams:
     players_tracked: float = 20.5
     player_gap_median_s: float = 2.0
     player_gap_sigma: float = 1.0
-    # Position noise in metres, drifting over noise_window_s.
+    # Position noise in metres, drifting over noise_window_s. The players get none since M11g:
+    # fitted to the players' speed percentiles of the match's tracking
+    # (scripts/calibrate_simulator.py --players), any added noise only moved IDSSE further from
+    # them; 0.15 m, the value before, read as about 1.3 m/s for a player standing still.
     ball_noise_m: float = 0.2
-    player_noise_m: float = 0.15
+    player_noise_m: float = 0.0
     noise_window_s: float = 1.0
 
 

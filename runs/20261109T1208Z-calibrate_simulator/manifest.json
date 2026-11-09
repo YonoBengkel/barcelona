@@ -1,0 +1,77 @@
+{
+ "command": "scripts/calibrate_simulator.py --players",
+ "commit": "3317bf66d449de01dd0176fb249fdc5bf84a321a",
+ "cpus": 4,
+ "exit_code": 0,
+ "finished": "2026-11-09T12:16:58Z",
+ "outputs": {},
+ "packages": [
+  "aiohappyeyeballs==2.7.1",
+  "aiohttp==3.14.5",
+  "aiosignal==1.4.0",
+  "attrs==26.1.0",
+  "cloudpickle==3.1.2",
+  "colorama==0.4.6",
+  "frozenlist==1.8.0",
+  "fsspec==2026.9.0",
+  "idna==3.20",
+  "iniconfig==2.3.1",
+  "joblib==1.6.0",
+  "kloppy==3.18.0",
+  "lxml==6.1.3",
+  "multidict==7.2.1",
+  "narwhals==2.28.0",
+  "numpy==2.5.4",
+  "packaging==26.3",
+  "pandas==3.1.1",
+  "pluggy==1.7.0",
+  "propcache==0.5.4",
+  "pygments==2.21.0",
+  "pytest==9.2.0",
+  "python-dateutil==4.0.0",
+  "pytz==2026.6",
+  "scikit-learn==1.9.1",
+  "scipy==1.18.1",
+  "sortedcontainers==2.4.0",
+  "threadpoolctl==3.8.0",
+  "typing-extensions==4.16.0",
+  "tzdata==2026.6",
+  "yarl==1.25.1"
+ ],
+ "platform": "Linux-6.18.55+-x86_64-with-glibc2.39",
+ "python": "3.12.4",
+ "started": "2026-11-09T12:08:12Z",
+ "steps": [
+  {
+   "exit_code": 0,
+   "seconds": 5.0,
+   "step": "install uv"
+  },
+  {
+   "exit_code": 0,
+   "seconds": 1.8,
+   "step": "create the environment"
+  },
+  {
+   "exit_code": 0,
+   "seconds": 2.0,
+   "step": "install the requirements"
+  },
+  {
+   "exit_code": 0,
+   "seconds": 34.6,
+   "step": "fetch IDSSE"
+  },
+  {
+   "exit_code": 0,
+   "seconds": 26.6,
+   "step": "run the tests"
+  },
+  {
+   "exit_code": 0,
+   "seconds": 456.1,
+   "step": "run the job"
+  }
+ ],
+ "uv": "uv 0.13.7 (x86_64-unknown-linux-gnu)"
+}

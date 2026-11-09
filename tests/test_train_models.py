@@ -188,6 +188,50 @@ def test_the_wide_grid_and_the_speed_check_run_end_to_end(tmp_path, monkeypatch,
     assert "speed x0.8" in printed and "speed x1.0" in printed
 
 
+def test_the_old_ground_is_fitted_there_and_scored_on_this_runs_matches(monkeypatch, capsys):
+    rng = np.random.default_rng(13)
+    matches = ["M1", "M2", "M3"]
+    train, held_out, truth = synthetic_design_inputs(rng, matches)
+
+    def noisier(X):
+        return (X + rng.normal(0, 0.5, X.shape)).astype(np.float32)
+
+    # The same matches and labels on another ground: only the features differ.
+    old_train = {m: {model: ([noisier(X) for X in Xs], ys) for model, (Xs, ys) in rows.items()}
+                 for m, rows in train.items()}
+    old_held_out = {m: dict(part, X=noisier(part["X"])) for m, part in held_out.items()}
+    axes = {"team_switch": (4, 16), "dead_switch": (16,), "dead_bias": (0.0,)}
+    monkeypatch.setattr(train_models, "labels_at",
+                        lambda match, tolerances: {t: truth[match] for t in tolerances})
+    monkeypatch.setattr(train_models, "DECODER_AXES", axes)
+    monkeypatch.setattr(train_models, "GRID", (1.0,))
+
+    old = train_models.fit_old_ground("v1", ["logistic"], ["logistic"], old_train, old_held_out,
+                                      held_out, matches, time.time())
+
+    assert set(old) == {"v1 (old ground)"}
+    summary = old["v1 (old ground)"]
+    assert set(summary["pooled"]) == {0.5, 1.0, 2.0} and set(summary["per_match"]) == set(matches)
+    printed = capsys.readouterr().out
+    assert "practice ground before M11g" in printed and "on this run's held-out matches" in printed
+
+
+def test_scoring_fixed_settings_reproduces_the_nested_score(monkeypatch):
+    rng = np.random.default_rng(17)
+    matches = ["M1", "M2", "M3"]
+    truth, held_out, oof = {}, {}, {}
+    for match in matches:
+        truth[match], held_out[match], oof[match] = synthetic_match(rng)
+    axes = {"team_switch": (1, 8), "dead_switch": (1, 8), "dead_bias": (0.0, 0.5)}
+    monkeypatch.setattr(train_models, "labels_at",
+                        lambda match, tolerances: {t: truth[match] for t in tolerances})
+    monkeypatch.setattr(train_models, "DECODER_AXES", axes)
+    with contextlib.redirect_stdout(io.StringIO()):
+        summary = train_models.fit_decoder(held_out, oof, matches)[3]
+    again = train_models.score_settings(held_out, oof, summary["nested"], matches)
+    assert again["pooled"] == summary["pooled"] and again["per_match"] == summary["per_match"]
+
+
 def test_slowed_scales_the_players_speeds_alone():
     rng = np.random.default_rng(11)
     features = rng.uniform(0.5, 5.0, size=(40, len(NAMES))).astype(np.float32)

@@ -32,6 +32,13 @@ scripts/make_submission.py), and the models read player speed. So the held-out m
 again with every player speed scaled by each factor, each match decoded with its own nested
 setting, and the score and the share of frames called dead are printed per factor.
 
+M11g fitted the simulator's player noise to the match's player speeds
+(scripts/calibrate_simulator.py --players), which changes the practice ground itself. With
+--old-ground (the default) the same kinds are also fitted on the ground as it was before
+(OLD_GROUND), with their decoder chosen there as before, and that pipeline is scored on this
+run's held-out matches: the reference the new ground's pipeline is set against, on the same
+frames, by the same rule.
+
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
 models/possession_<variant>.json.
 
@@ -48,7 +55,7 @@ laptop.
 
     python scripts/train_models.py [--designs v1 [v2]] [--dead trees [logistic]]
                                    [--team trees-wide [trees logistic]] [--grids base [wide]]
-                                   [--reference v1+trees-wide+deadtrees]
+                                   [--no-old-ground] [--reference VARIANT]
                                    [--speed-factors [0.9 0.8]] [--seeds 2] [--step 8]
                                    [--out-dir models] [--oracle]
 """
@@ -59,6 +66,7 @@ import itertools
 import os
 import sys
 import time
+from dataclasses import asdict, replace
 
 import numpy as np
 from sklearn import __version__ as sklearn_version
@@ -75,6 +83,7 @@ from possession.features import FPS, HOME, NAMES, compute, swapped  # noqa: E402
 from possession.models import (DESIGNS, design, design_names, fit, fit_trees,  # noqa: E402
                                log_state_probabilities, probability, save)
 from possession.predictors import NOBODY, nearest_team, smooth  # noqa: E402
+from possession.simulate import DegradeParams  # noqa: E402
 
 pm = practice.pm
 PITCH = (105.0, 68.0)
@@ -106,6 +115,10 @@ WIDE_DEAD_BIAS = (1.5, 2.0, 2.5, 3.0)
 # The speed check (M11f) scales the players' speeds of the held-out matches by these factors.
 SPEED_FACTORS = (0.9, 0.8)
 PLAYER_SPEEDS = ("speed_all", "speed_home", "speed_away")
+# The practice ground of M9 to M11f, before M11g fitted the players' noise to the match
+# (--old-ground): everything as now but the players' 0.15 m of noise.
+OLD_GROUND = replace(DegradeParams(), player_noise_m=0.15)
+OLD_SUFFIX = " (old ground)"
 
 
 def decoder_axes(grid="base"):
@@ -125,14 +138,16 @@ def slowed(features, factor):
     return out
 
 
-def build(match_ids, seeds, step, designs=("v1",), speed_factors=()):
+def build(match_ids, seeds, step, designs=("v1",), speed_factors=(), params=None):
     """Training rows per design and match, and the held-out halves per match for evaluation,
     with one feature matrix per design under 'X' and, for the speed check, one per design and
     speed factor under 'slow'. The features are computed once per half and only the design
-    differs, so every design sees exactly the same frames."""
+    differs, so every design sees exactly the same frames. params: the practice ground's
+    DegradeParams, its defaults unless given."""
+    params = DegradeParams() if params is None else params
     train = {v: {m: {"dead": ([], []), "team": ([], [])} for m in match_ids} for v in designs}
     for seed in range(seeds):
-        for case in practice.cases(match_ids, tolerance_s=1.0, seed=seed):
+        for case in practice.cases(match_ids, params=params, tolerance_s=1.0, seed=seed):
             labels = case["labels"]
             features = compute(case["half"], PITCH)[0]
             mirrored_features = compute(swapped(case["half"]), PITCH)[0]
@@ -147,7 +162,7 @@ def build(match_ids, seeds, step, designs=("v1",), speed_factors=()):
                 rows["team"][0].extend([X[live], mirrored[live]])
                 rows["team"][1].extend([labels[live] == "H", labels[live] == "A"])
     held_out = {}
-    for case in practice.cases(match_ids, tolerance_s=1.0, seed=EVAL_SEED):
+    for case in practice.cases(match_ids, params=params, tolerance_s=1.0, seed=EVAL_SEED):
         features = compute(case["half"], PITCH)[0]
         part = held_out.setdefault(case["match"], {
             "X": {v: [] for v in designs},
@@ -488,6 +503,25 @@ def speed_check(held_out, evidence, settings, matches):
     return out
 
 
+def score_settings(held_out, evidence, settings, matches):
+    """The held-out summary fit_decoder reports, for evidence decoded with given settings:
+    {'pooled': {tolerance: (spellF1, macroF1)}, 'per_match': {match: spellF1 at +/-1 s}}.
+
+    evidence: {match: log-probabilities per half}; settings: {match: (team_switch, dead_switch,
+    dead_bias)}, each match's own.
+    """
+    rows = collections.defaultdict(list)
+    for match in matches:
+        pred = next(decoded(evidence[match], [settings[match]]))
+        other = labels_at(match, [t for t in TOLERANCES if t != 1.0])
+        for tolerance in TOLERANCES:
+            labels = halves_of(held_out[match], "labels") if tolerance == 1.0 else other[tolerance]
+            gt = practice.joined([practice.codes(l) for l in labels], gap=pm.X)
+            rows[tolerance].append(practice.counts(gt, pred))
+    return {"pooled": {t: practice.pooled(rows[t]) for t in TOLERANCES},
+            "per_match": {m: practice.pooled([part])[0] for m, part in zip(matches, rows[1.0])}}
+
+
 def variant_name(version, dead_kind, team_kind, grid="base"):
     """'v1' with logistic models; '+trees' or '+trees-wide' for a tree team model, '+deadtrees'
     for a tree dead-ball model, '+widebias' for the wide decoder grid: 'v1+trees-wide+deadtrees'
@@ -558,13 +592,58 @@ def fit_design(version, dead_kinds, team_kinds, train, held_out, matches, args, 
                                         "pitch": list(PITCH), "scikit_learn": sklearn_version,
                                         "dead_model": dead_label, "team_model": team_label,
                                         "decoder_grid": {k: list(v) for k, v in axes.items()},
-                                        "practice_range": practice_range}}
+                                        "practice_range": practice_range,
+                                        "simulator": asdict(DegradeParams())}}
                 out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
                 os.makedirs(args.out_dir, exist_ok=True)
                 save(models, out)
                 print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
                                                           time.time() - start))
                 summaries[variant] = summary
+    return summaries
+
+
+def fit_old_ground(version, dead_kinds, team_kinds, train, old_held_out, held_out, matches,
+                   start):
+    """The pipeline the practice ground before M11g (OLD_GROUND) makes, scored on this run's
+    held-out matches: the reference for a change of the ground itself.
+
+    train and old_held_out are built on OLD_GROUND. Each kind is chosen and fitted there, and each
+    pair's decoder is chosen there, nested, on the base grid, exactly as before M11g. The folds
+    then weigh held_out, this run's held-out matches, and each match is decoded with the setting
+    chosen for it on the old ground. Returns {'<variant> (old ground)': summary} for compare().
+    """
+    print("\n===== design {} on the practice ground before M11g (player noise {:g} m) =====".format(
+        version, OLD_GROUND.player_noise_m))
+    rule = rules(old_held_out, matches)
+    chosen = {}
+    for model, kinds in (("dead", dead_kinds), ("team", team_kinds)):
+        for kind in kinds:
+            chosen[(model, kind)] = choose(model, kind, train, old_held_out, matches, version, rule)
+            print("chosen {} {} on the old ground ({:.0f} s)".format(
+                model, chosen[(model, kind)][0], time.time() - start))
+
+    summaries = {}
+    for dead_kind in dead_kinds:
+        for team_kind in team_kinds:
+            dead_label, dead_folds, _ = chosen[("dead", dead_kind)]
+            team_label, team_folds, _ = chosen[("team", team_kind)]
+            folds = {m: {"dead": dead_folds[m], "team": team_folds[m]} for m in matches}
+            name = variant_name(version, dead_kind, team_kind) + OLD_SUFFIX
+            print("\n----- {}: dead {}, team {}, decoder chosen on the old ground ({:.0f} s) "
+                  "-----".format(name, dead_label, team_label, time.time() - start))
+            old_evidence = {m: [log_state_probabilities(folds[m], X)
+                                for X in halves_of(old_held_out[m], "X")] for m in matches}
+            settings = fit_decoder(old_held_out, old_evidence, matches)[3]["nested"]
+            evidence = {m: [log_state_probabilities(folds[m], X)
+                            for X in halves_of(held_out[m], "X")] for m in matches}
+            summary = score_settings(held_out, evidence, settings, matches)
+            print("\n{} on this run's held-out matches: spellF1 {}; macroF1 {:.4f} at +/-1 s"
+                  .format(name, ", ".join("{:.4f} at +/-{:g} s".format(summary["pooled"][t][0], t)
+                                          for t in TOLERANCES), summary["pooled"][1.0][1]))
+            print("held-out spellF1 per match: " + ", ".join(
+                "{} {:.3f}".format(m, v) for m, v in summary["per_match"].items()))
+            summaries[name] = summary
     return summaries
 
 
@@ -603,15 +682,19 @@ def main():
     # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
     parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
     # M11e adopted trees for both models (v1+trees-wide+deadtrees,
-    # runs/20261109T1004Z-train_models) with dead_bias at the top of the base grid; M11f sets the
-    # wide grid against it. Run --dead logistic trees --team trees trees-wide --grids base
-    # --speed-factors to repeat M11e.
+    # runs/20261109T1004Z-train_models); M11f found the wide grid changes nothing
+    # (runs/20261109T1114Z-train_models). Run --dead logistic trees --team trees trees-wide
+    # --no-old-ground --speed-factors on the old ground to repeat M11e.
     parser.add_argument("--dead", nargs="+", default=["trees"], choices=DEAD_KINDS)
     parser.add_argument("--team", nargs="+", default=["trees-wide"], choices=TEAM_KINDS)
-    parser.add_argument("--grids", nargs="+", default=list(GRIDS), choices=GRIDS,
+    parser.add_argument("--grids", nargs="+", default=["base"], choices=GRIDS,
                         help="decoder grids to search, each a variant of its own")
-    parser.add_argument("--reference", default="v1+trees-wide+deadtrees",
-                        help="the variant the others are set against")
+    parser.add_argument("--old-ground", action=argparse.BooleanOptionalAction, default=True,
+                        help="also fit the pipeline on the practice ground before M11g and score "
+                             "it on this run's held-out matches, as the reference")
+    parser.add_argument("--reference", default=None,
+                        help="the variant the others are set against; by default the first pair "
+                             "of kinds on the old ground, or v1+trees-wide+deadtrees without it")
     parser.add_argument("--speed-factors", nargs="*", type=float, default=list(SPEED_FACTORS),
                         help="factors the speed check scales the players' speeds by; give none "
                              "to skip it")
@@ -638,11 +721,20 @@ def main():
                 for m, part in held_out.items()}
         summaries.update(fit_design(version, args.dead, args.team, train[version], view,
                                     matches, args, start))
-    if args.reference in summaries and len(summaries) > 1:
-        compare(summaries, matches, args.reference)
+    if args.old_ground:
+        old_train, old_held_out = build(matches, args.seeds, args.step, [first], (), OLD_GROUND)
+        print("\nbuilt the old ground's rows ({:.0f} s so far)".format(time.time() - start))
+        old_view = {m: dict(part, X=part["X"][first]) for m, part in old_held_out.items()}
+        view = {m: dict(part, X=part["X"][first]) for m, part in held_out.items()}
+        summaries.update(fit_old_ground(first, args.dead, args.team, old_train[first], old_view,
+                                        view, matches, start))
+    reference = args.reference or (
+        variant_name(first, args.dead[0], args.team[0]) + OLD_SUFFIX if args.old_ground
+        else "v1+trees-wide+deadtrees")
+    if reference in summaries and len(summaries) > 1:
+        compare(summaries, matches, reference)
     else:
-        print("\nno comparison: the reference {} was not fitted in this run".format(
-            args.reference))
+        print("\nno comparison: the reference {} was not fitted in this run".format(reference))
     print("\ndone in {:.0f} s".format(time.time() - start))
     return 0
 
