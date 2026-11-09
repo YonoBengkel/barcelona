@@ -90,9 +90,10 @@ notebook cell:
 
 ```bash
 scripts/train_models.py        # fit the models and choose the decoder, match by match, for each
-                               # pair of dead-ball and team model kinds; write
-                               # models/possession_<variant>.json and set each variant against
-                               # the adopted one by a rule fixed in the code
+                               # pair of dead-ball and team model kinds and each decoder grid;
+                               # write models/possession_<variant>.json, set each variant against
+                               # the adopted one by a rule fixed in the code, and print how the
+                               # held-out score moves with slower players (chooses nothing)
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)

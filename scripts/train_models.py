@@ -6,9 +6,9 @@ seed no training copy used. Both models come in kinds, named by --dead and --tea
 regression (C chosen by pooled held-out log loss) and gradient-boosted trees (settings in TREES,
 chosen the same way); the team model also has 'trees-wide', a larger tree model. Every pair of a
 dead-ball kind and a team kind is a variant: 'v1' for two logistic models, 'v1+trees' for a tree
-team model (adopted in M11d), '+deadtrees' for a tree dead-ball model. The baseline's own rules
-are scored beside them on the same frames: "no ball means dead" and "the nearest player's team
-has it".
+team model (adopted in M11d), '+deadtrees' for a tree dead-ball model ('v1+trees-wide+deadtrees'
+was adopted in M11e). The baseline's own rules are scored beside them on the same frames: "no ball
+means dead" and "the nearest player's team has it".
 
 The decoder (possession.decode) then turns those held-out probabilities into labels for every
 setting of a grid of its three costs, and each setting is scored on each match with the official
@@ -17,30 +17,40 @@ on the other six matches alone, so the score reported for the whole pipeline is 
 as well, except for C, which is chosen once on all seven (it barely matters, see the log loss
 lines); the setting written out is the one that does best on all seven. The organisers' baseline
 (nearest player, majority over +/- 2 s) is scored on the same frames, at label tolerances of 0.5,
-1 and 2 s.
+1 and 2 s. Each grid named by --grids makes a variant of its own: 'base', the grid of M9 to M11e,
+and 'wide', which holds every base setting and reaches further up in dead_bias ('+widebias'; M11e
+chose 1.0, the top of the base grid).
 
 It then prints where the held-out pipeline goes wrong (possession.diagnose): its calls and
 errors by ball state, and the cause of every possession it misses. With --oracle it also decodes
 the held-out evidence with its team call, its dead-ball call or both turned to the truth, at the
 model's own confidence, which bounds what fixing each part could gain.
 
+The speed check (M11f, --speed-factors) chooses nothing. The match's tracking reports slower
+players than the practice ground in every ball state (the ball-state table of
+scripts/make_submission.py), and the models read player speed. So the held-out matches are scored
+again with every player speed scaled by each factor, each match decoded with its own nested
+setting, and the score and the share of frames called dead are printed per factor.
+
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
 models/possession_<variant>.json.
 
 All of this runs for every design of the features named (possession.models.DESIGNS) on the same
 degraded halves. Each variant is then set against the reference (--reference; the adopted
-v1+trees by default) match by match, and the adoption rule fixed before the run is applied: a
-variant replaces the reference only if its held-out spellF1 at +/-1 s is at least 0.01 higher,
-it is better on at least 5 of the 7 matches, it loses nothing at +/-0.5 s or +/-2 s, and its
-macroF1 falls by at most 0.005. If several pass, the one with the highest held-out spellF1 at
+v1+trees-wide+deadtrees by default) match by match, and the adoption rule fixed before the run is
+applied: a variant replaces the reference only if its held-out spellF1 at +/-1 s is at least 0.01
+higher, it is better on at least 5 of the 7 matches, it loses nothing at +/-0.5 s or +/-2 s, and
+its macroF1 falls by at most 0.005. If several pass, the one with the highest held-out spellF1 at
 +/-1 s is adopted.
 
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.
 
-    python scripts/train_models.py [--designs v1 [v2]] [--dead logistic [trees]]
-                                   [--team trees [trees-wide logistic]] [--reference v1+trees]
-                                   [--seeds 2] [--step 8] [--out-dir models] [--oracle]
+    python scripts/train_models.py [--designs v1 [v2]] [--dead trees [logistic]]
+                                   [--team trees-wide [trees logistic]] [--grids base [wide]]
+                                   [--reference v1+trees-wide+deadtrees]
+                                   [--speed-factors [0.9 0.8]] [--seeds 2] [--step 8]
+                                   [--out-dir models] [--oracle]
 """
 
 import argparse
@@ -61,7 +71,7 @@ from possession import diagnose  # noqa: E402
 from possession import external as ex  # noqa: E402
 from possession import practice  # noqa: E402
 from possession.decode import viterbi  # noqa: E402
-from possession.features import FPS, HOME, compute, swapped  # noqa: E402
+from possession.features import FPS, HOME, NAMES, compute, swapped  # noqa: E402
 from possession.models import (DESIGNS, design, design_names, fit, fit_trees,  # noqa: E402
                                log_state_probabilities, probability, save)
 from possession.predictors import NOBODY, nearest_team, smooth  # noqa: E402
@@ -73,7 +83,8 @@ DEAD_KINDS = ("logistic", "trees")
 TEAM_KINDS = ("logistic", "trees", "trees-wide")
 # Gradient-boosted settings per (model, kind), chosen among by held-out log loss like C.
 # ('team', 'trees') is the setting M11d chose from two (runs/20261109T0931Z-train_models) and
-# adopted; M11e tries a larger team model and trees for the dead-ball model.
+# adopted; M11e adopted the larger team model with trees for the dead-ball model
+# (runs/20261109T1004Z-train_models).
 TREES = {("team", "trees"): ({"max_iter": 300, "max_leaf_nodes": 63, "learning_rate": 0.05,
                               "min_samples_leaf": 100},),
          ("team", "trees-wide"): ({"max_iter": 600, "max_leaf_nodes": 127, "learning_rate": 0.05,
@@ -88,12 +99,37 @@ DECODER_AXES = {"team_switch": (8, 16, 32, 64, 128, 256, 512),
                 "dead_switch": (8, 16, 32, 64, 128, 256, 512),
                 "dead_bias": (-1.0, -0.5, 0.0, 0.5, 1.0)}
 DECODER_GRID = tuple(itertools.product(*DECODER_AXES.values()))
+GRIDS = ("base", "wide")
+# M11e chose dead_bias 1.0, the top of the base grid, in six folds of seven
+# (runs/20261109T1004Z-train_models). The wide grid adds these above it (M11f).
+WIDE_DEAD_BIAS = (1.5, 2.0, 2.5, 3.0)
+# The speed check (M11f) scales the players' speeds of the held-out matches by these factors.
+SPEED_FACTORS = (0.9, 0.8)
+PLAYER_SPEEDS = ("speed_all", "speed_home", "speed_away")
 
 
-def build(match_ids, seeds, step, designs=("v1",)):
+def decoder_axes(grid="base"):
+    """The decoder's axes for one of GRIDS: 'base' is DECODER_AXES; 'wide' extends dead_bias
+    upward by WIDE_DEAD_BIAS and keeps every base setting, in the same axis order."""
+    if grid == "base":
+        return DECODER_AXES
+    return dict(DECODER_AXES, dead_bias=tuple(DECODER_AXES["dead_bias"]) + tuple(WIDE_DEAD_BIAS))
+
+
+def slowed(features, factor):
+    """A copy of possession.features.compute's matrix with the players' speeds (PLAYER_SPEEDS)
+    scaled by factor, as a tracker that reports slower players would give it."""
+    out = np.array(features, copy=True)
+    for name in PLAYER_SPEEDS:
+        out[:, NAMES.index(name)] *= factor
+    return out
+
+
+def build(match_ids, seeds, step, designs=("v1",), speed_factors=()):
     """Training rows per design and match, and the held-out halves per match for evaluation,
-    with one feature matrix per design under 'X'. The features are computed once per half and
-    only the design differs, so every design sees exactly the same frames."""
+    with one feature matrix per design under 'X' and, for the speed check, one per design and
+    speed factor under 'slow'. The features are computed once per half and only the design
+    differs, so every design sees exactly the same frames."""
     train = {v: {m: {"dead": ([], []), "team": ([], [])} for m in match_ids} for v in designs}
     for seed in range(seeds):
         for case in practice.cases(match_ids, tolerance_s=1.0, seed=seed):
@@ -113,11 +149,15 @@ def build(match_ids, seeds, step, designs=("v1",)):
     held_out = {}
     for case in practice.cases(match_ids, tolerance_s=1.0, seed=EVAL_SEED):
         features = compute(case["half"], PITCH)[0]
-        part = held_out.setdefault(case["match"], {"X": {v: [] for v in designs}, "labels": [],
-                                                   "nearest": [], "ball_known": [],
-                                                   "lengths": []})
+        part = held_out.setdefault(case["match"], {
+            "X": {v: [] for v in designs},
+            "slow": {v: {f: [] for f in speed_factors} for v in designs},
+            "labels": [], "nearest": [], "ball_known": [], "lengths": []})
         for version in designs:
             part["X"][version].append(design(features, version).astype(np.float32))
+            for factor in speed_factors:
+                part["slow"][version][factor].append(
+                    design(slowed(features, factor), version).astype(np.float32))
         part["labels"].append(case["labels"])
         part["nearest"].append(nearest_team(case["half"]))
         part["ball_known"].append(features[:, 0] + features[:, 1] > 0)  # seen or bridged
@@ -126,12 +166,19 @@ def build(match_ids, seeds, step, designs=("v1",)):
         for key in ("labels", "nearest", "ball_known"):
             part[key] = np.concatenate(part[key])
         part["X"] = {version: np.concatenate(X) for version, X in part["X"].items()}
+        part["slow"] = {version: {factor: np.concatenate(X) for factor, X in by_factor.items()}
+                        for version, by_factor in part["slow"].items()}
     return train, held_out
+
+
+def split(part, array):
+    """An array over a held-out match's frames, split back into its halves."""
+    return np.split(array, np.cumsum(part["lengths"])[:-1])
 
 
 def halves_of(part, key):
     """A held-out match's array split back into its halves."""
-    return np.split(part[key], np.cumsum(part["lengths"])[:-1])
+    return split(part, part[key])
 
 
 def stack(train, matches, model):
@@ -241,18 +288,23 @@ def spell_rate(codes, gt_codes):
     return stats["n_spells"] / minutes * 10.0, stats["mean_duration_s"]
 
 
-def fit_decoder(held_out, oof, matches):
-    """Choose the decoder setting, nested by match, and report it.
+def fit_decoder(held_out, oof, matches, axes=None):
+    """Choose the decoder setting on the grid of axes (DECODER_AXES unless given), nested by
+    match, and report it.
 
     Returns (setting, practice range, held-out codes per match, summary), where summary holds
-    the held-out (spellF1, macroF1) per label tolerance and the held-out spellF1 per match.
+    the held-out (spellF1, macroF1) per label tolerance, the held-out spellF1 per match, and
+    under 'nested' each match's setting chosen on the other six, as a (team_switch, dead_switch,
+    dead_bias) tuple.
     """
+    axes = DECODER_AXES if axes is None else axes
+    grid = tuple(itertools.product(*axes.values()))
     start = time.time()
-    table = [dict() for _ in DECODER_GRID]
+    table = [dict() for _ in grid]
     for match in matches:
         gt = practice.joined([practice.codes(l) for l in halves_of(held_out[match], "labels")],
                              gap=pm.X)
-        for k, pred in enumerate(decoded(oof[match], DECODER_GRID)):
+        for k, pred in enumerate(decoded(oof[match], grid)):
             table[k][match] = practice.counts(gt, pred)
         print("  decoder grid on {}: {:.0f} s so far".format(match, time.time() - start))
     chosen = {m: best(table, [o for o in matches if o != m]) for m in matches}
@@ -262,7 +314,7 @@ def fit_decoder(held_out, oof, matches):
     rates = collections.defaultdict(list)
     held_out_codes = {}
     for match in matches:
-        nested, overall = decoded(oof[match], [DECODER_GRID[chosen[match]], DECODER_GRID[final]])
+        nested, overall = decoded(oof[match], [grid[chosen[match]], grid[final]])
         held_out_codes[match] = nested
         nearest = halves_of(held_out[match], "nearest")
         base = practice.joined([practice.codes(smooth(n, BASELINE_WINDOW)) for n in nearest],
@@ -278,8 +330,7 @@ def fit_decoder(held_out, oof, matches):
                 rates["ours"].append(spell_rate(nested, gt))
 
     print("\ndecoder: {} settings of {}, each match's chosen on the other six; C was chosen once "
-          "on all seven ({:.0f} s)".format(len(DECODER_GRID), ", ".join(DECODER_AXES),
-                                           time.time() - start))
+          "on all seven ({:.0f} s)".format(len(grid), ", ".join(axes), time.time() - start))
     print("{:<10} {:>28} {:>28} {:>28}".format("labels", "ours, held out",
                                                "ours, set on all seven", "baseline_smooth50"))
     for tolerance in TOLERANCES:
@@ -290,13 +341,13 @@ def fit_decoder(held_out, oof, matches):
                  for match, part in zip(matches, rows[("nested", 1.0)])}
     print("held-out spellF1 per match: " + ", ".join(
         "{} {:.3f}".format(match, value) for match, value in per_match.items()))
-    picks = collections.Counter(DECODER_GRID[k] for k in chosen.values())
+    picks = collections.Counter(grid[k] for k in chosen.values())
     print("settings chosen per match: " + "; ".join(
-        "{} x{}".format(dict(zip(DECODER_AXES, setting)), n) for setting, n in picks.most_common()))
-    setting = dict(zip(DECODER_AXES, DECODER_GRID[final]))
-    edges = ["{} {}".format(name, "upper" if value == DECODER_AXES[name][-1] else "lower")
+        "{} x{}".format(dict(zip(axes, setting)), n) for setting, n in picks.most_common()))
+    setting = dict(zip(axes, grid[final]))
+    edges = ["{} {}".format(name, "upper" if value == axes[name][-1] else "lower")
              for name, value in setting.items()
-             if value in (DECODER_AXES[name][0], DECODER_AXES[name][-1])]
+             if value in (axes[name][0], axes[name][-1])]
     print("chosen on all seven: {}{}".format(setting, "  AT THE EDGE OF THE GRID: " + ", ".join(
         edges) + "; widen it" if edges else ""))
 
@@ -310,7 +361,7 @@ def fit_decoder(held_out, oof, matches):
         print("possessions, {}: {:.1f}-{:.1f} per 10 min, mean {:.1f}-{:.1f} s".format(
             name, rate.min(), rate.max(), length.min(), length.max()))
     summary = {"pooled": {t: practice.pooled(rows[("nested", t)]) for t in TOLERANCES},
-               "per_match": per_match}
+               "per_match": per_match, "nested": {m: grid[chosen[m]] for m in matches}}
     return setting, practice_range, held_out_codes, summary
 
 
@@ -370,49 +421,95 @@ def oracle_evidence(log_p, truth, variant):
     return np.column_stack([dead[:, 0] + team[:, 0], dead[:, 0] + team[:, 1], dead[:, 1]])
 
 
-def oracle_headroom(held_out, oof, matches):
+def oracle_headroom(held_out, oof, matches, axes=None):
     """How far the pipeline is from what its decoder could do with right evidence (M11c).
 
-    For each variant of oracle_evidence, the best pooled spellF1 over the decoder grid on all
-    seven matches, labels at +/-1 s. It is an upper bound chosen in sample, not a held-out score:
-    the gap between rows says which part, team or dead ball, holds the remaining score.
+    For each variant of oracle_evidence, the best pooled spellF1 over the decoder grid of axes
+    (DECODER_AXES unless given) on all seven matches, labels at +/-1 s. It is an upper bound
+    chosen in sample, not a held-out score: the gap between rows says which part, team or dead
+    ball, holds the remaining score.
     """
+    axes = DECODER_AXES if axes is None else axes
+    grid = tuple(itertools.product(*axes.values()))
     start = time.time()
     print("\nperfect-evidence check (M11c), best setting on all seven, labels at +/-1 s; the "
           "evidence keeps the model's confidence and only its direction is corrected")
     truths = {m: [practice.codes(l) for l in halves_of(held_out[m], "labels")] for m in matches}
     gts = {m: practice.joined(truths[m], gap=pm.X) for m in matches}
     for variant in ORACLES:
-        table = [dict() for _ in DECODER_GRID]
+        table = [dict() for _ in grid]
         for match in matches:
             evidence = [oracle_evidence(log_p, truth, variant)
                         for log_p, truth in zip(oof[match], truths[match])]
-            for k, pred in enumerate(decoded(evidence, DECODER_GRID)):
+            for k, pred in enumerate(decoded(evidence, grid)):
                 table[k][match] = practice.counts(gts[match], pred)
         k = best(table, matches)
         spell, macro = practice.pooled([table[k][m] for m in matches])
         print("  {:<10} spellF1 {:.4f}  mF1 {:.4f}  at {} ({:.0f} s)".format(
-            variant, spell, macro, dict(zip(DECODER_AXES, DECODER_GRID[k])),
-            time.time() - start))
+            variant, spell, macro, dict(zip(axes, grid[k])), time.time() - start))
 
 
-def variant_name(version, dead_kind, team_kind):
+def speed_check(held_out, evidence, settings, matches):
+    """How the held-out pipeline moves when the players' speeds are scaled (M11f). It chooses
+    nothing.
+
+    evidence: {factor: {match: log-probabilities per half}}, the held-out folds' evidence with
+    every player speed scaled by factor (1.0: as degraded); settings: {match: the decoder setting
+    chosen on the other six}. Returns {factor: (spellF1, macroF1, share of frames called D, that
+    share where the ball is seen)}, pooled over matches with labels at +/-1 s, and prints it
+    beside the true shares. At 1.0 it reproduces the nested held-out score.
+    """
+    gts, graded, seen = {}, {}, {}
+    for match in matches:
+        part = held_out[match]
+        gts[match] = practice.joined([practice.codes(l) for l in halves_of(part, "labels")],
+                                     gap=pm.X)
+        graded[match] = gts[match] != pm.X
+        state = practice.joined([diagnose.ball_states(X) for X in halves_of(part, "X")], gap=-1)
+        seen[match] = graded[match] & (state == diagnose.STATES.index("seen"))
+    true_dead = np.mean(np.concatenate([gts[m][graded[m]] == pm.D for m in matches]))
+    true_seen = np.mean(np.concatenate([gts[m][seen[m]] == pm.D for m in matches]))
+    print("\nspeed check (M11f), which chooses nothing: the held-out matches with every player "
+          "speed scaled, each decoded with its setting chosen on the other six, labels at +/-1 s")
+    out = {}
+    for factor in sorted(evidence, reverse=True):
+        parts, dead, dead_seen = [], [], []
+        for match in matches:
+            pred = next(decoded(evidence[factor][match], [settings[match]]))
+            parts.append(practice.counts(gts[match], pred))
+            dead.append(pred[graded[match]] == pm.D)
+            dead_seen.append(pred[seen[match]] == pm.D)
+        spell, macro = practice.pooled(parts)
+        out[factor] = (spell, macro, float(np.mean(np.concatenate(dead))),
+                       float(np.mean(np.concatenate(dead_seen))))
+        print("  speed x{:.1f}  spellF1 {:.4f}  mF1 {:.4f}  called D {:.1%} (true {:.1%}), where "
+              "the ball is seen {:.1%} (true {:.1%})".format(
+                  factor, spell, macro, out[factor][2], true_dead, out[factor][3], true_seen))
+    return out
+
+
+def variant_name(version, dead_kind, team_kind, grid="base"):
     """'v1' with logistic models; '+trees' or '+trees-wide' for a tree team model, '+deadtrees'
-    for a tree dead-ball model: 'v1+trees' is the one adopted in M11d."""
+    for a tree dead-ball model, '+widebias' for the wide decoder grid: 'v1+trees-wide+deadtrees'
+    is the one adopted in M11e."""
     name = version
     if team_kind != "logistic":
         name += "+" + team_kind
     if dead_kind != "logistic":
         name += "+dead" + dead_kind
+    if grid != "base":
+        name += "+" + grid + "bias"
     return name
 
 
 def fit_design(version, dead_kinds, team_kinds, train, held_out, matches, args, start):
     """One design: each kind of dead-ball and of team model chosen and fitted once, then for every
-    pair of them a decoder, an error report and a file models/possession_<variant>.json.
+    pair of them and every decoder grid (args.grids) a decoder, an error report, the speed check
+    (args.speed_factors, none to skip it) and a file models/possession_<variant>.json.
 
-    held_out carries this design's feature matrix under 'X'. Returns {variant: fit_decoder's
-    summary}.
+    held_out carries this design's feature matrix under 'X', and under 'slow' one per speed
+    factor. Returns {variant: fit_decoder's summary, with the speed check's rows under 'speed'
+    when it ran}.
     """
     print("\n===== design {}: {} columns =====".format(version, len(design_names(version))))
     rule = rules(held_out, matches)
@@ -428,34 +525,46 @@ def fit_design(version, dead_kinds, team_kinds, train, held_out, matches, args, 
         for team_kind in team_kinds:
             dead_label, dead_folds, dead_model = chosen[("dead", dead_kind)]
             team_label, team_folds, team_model = chosen[("team", team_kind)]
-            variant = variant_name(version, dead_kind, team_kind)
-            print("\n----- {}: dead {}, team {} ({:.0f} s) -----".format(
-                variant, dead_label, team_label, time.time() - start))
+            folds = {m: {"dead": dead_folds[m], "team": team_folds[m]} for m in matches}
+            # The held-out evidence, as degraded (1.0) and with the players' speeds scaled.
+            evidence = {1.0: {m: [log_state_probabilities(folds[m], X)
+                                  for X in halves_of(held_out[m], "X")] for m in matches}}
+            for factor in args.speed_factors:
+                evidence[factor] = {m: [log_state_probabilities(folds[m], X)
+                                        for X in split(held_out[m], held_out[m]["slow"][factor])]
+                                    for m in matches}
+            oof = evidence[1.0]
+            print("\nheld-out evidence of dead {}, team {} at speed x{} ({:.0f} s so far)".format(
+                dead_label, team_label, ", x".join("{:g}".format(f) for f in evidence),
+                time.time() - start))
 
-            oof = {m: [log_state_probabilities({"dead": dead_folds[m], "team": team_folds[m]},
-                                               X) for X in halves_of(held_out[m], "X")]
-                   for m in matches}
-            decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof,
-                                                                           matches)
-            report_errors(held_out, held_out_codes, matches)
-            if args.oracle:
-                oracle_headroom(held_out, oof, matches)
+            for grid in args.grids:
+                variant = variant_name(version, dead_kind, team_kind, grid)
+                axes = decoder_axes(grid)
+                print("\n----- {}: dead {}, team {}, decoder grid {} ({:.0f} s) -----".format(
+                    variant, dead_label, team_label, grid, time.time() - start))
+                decoder, practice_range, held_out_codes, summary = fit_decoder(
+                    held_out, oof, matches, axes)
+                report_errors(held_out, held_out_codes, matches)
+                if args.oracle:
+                    oracle_headroom(held_out, oof, matches, axes)
+                if args.speed_factors:
+                    summary["speed"] = speed_check(held_out, evidence, summary["nested"], matches)
 
-            models = {"design": version, "dead": dead_model, "team": team_model,
-                      "decoder": decoder,
-                      "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
-                                    "label_tolerance_s": 1.0, "pitch": list(PITCH),
-                                    "scikit_learn": sklearn_version, "dead_model": dead_label,
-                                    "team_model": team_label,
-                                    "decoder_grid": {k: list(v)
-                                                     for k, v in DECODER_AXES.items()},
-                                    "practice_range": practice_range}}
-            out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
-            os.makedirs(args.out_dir, exist_ok=True)
-            save(models, out)
-            print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
-                                                      time.time() - start))
-            summaries[variant] = summary
+                models = {"design": version, "dead": dead_model, "team": team_model,
+                          "decoder": decoder,
+                          "fitted_on": {"matches": matches, "seeds": args.seeds,
+                                        "step": args.step, "label_tolerance_s": 1.0,
+                                        "pitch": list(PITCH), "scikit_learn": sklearn_version,
+                                        "dead_model": dead_label, "team_model": team_label,
+                                        "decoder_grid": {k: list(v) for k, v in axes.items()},
+                                        "practice_range": practice_range}}
+                out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
+                os.makedirs(args.out_dir, exist_ok=True)
+                save(models, out)
+                print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
+                                                          time.time() - start))
+                summaries[variant] = summary
     return summaries
 
 
@@ -493,12 +602,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
     parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
-    # M11d adopted the tree team model (v1+trees). M11e sets against it a larger tree team model
-    # and a tree dead-ball model, on the same frames.
-    parser.add_argument("--dead", nargs="+", default=["logistic", "trees"], choices=DEAD_KINDS)
-    parser.add_argument("--team", nargs="+", default=["trees", "trees-wide"], choices=TEAM_KINDS)
-    parser.add_argument("--reference", default="v1+trees",
+    # M11e adopted trees for both models (v1+trees-wide+deadtrees,
+    # runs/20261109T1004Z-train_models) with dead_bias at the top of the base grid; M11f sets the
+    # wide grid against it. Run --dead logistic trees --team trees trees-wide --grids base
+    # --speed-factors to repeat M11e.
+    parser.add_argument("--dead", nargs="+", default=["trees"], choices=DEAD_KINDS)
+    parser.add_argument("--team", nargs="+", default=["trees-wide"], choices=TEAM_KINDS)
+    parser.add_argument("--grids", nargs="+", default=list(GRIDS), choices=GRIDS,
+                        help="decoder grids to search, each a variant of its own")
+    parser.add_argument("--reference", default="v1+trees-wide+deadtrees",
                         help="the variant the others are set against")
+    parser.add_argument("--speed-factors", nargs="*", type=float, default=list(SPEED_FACTORS),
+                        help="factors the speed check scales the players' speeds by; give none "
+                             "to skip it")
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
@@ -510,7 +626,7 @@ def main():
     matches = sorted(ex.MATCHES)
 
     start = time.time()
-    train, held_out = build(matches, args.seeds, args.step, args.designs)
+    train, held_out = build(matches, args.seeds, args.step, args.designs, args.speed_factors)
     first = args.designs[0]
     print("built rows in {:.0f} s: dead {}, team {}".format(
         time.time() - start, len(stack(train[first], matches, "dead")[1]),
@@ -518,7 +634,8 @@ def main():
 
     summaries = {}
     for version in args.designs:
-        view = {m: dict(part, X=part["X"][version]) for m, part in held_out.items()}
+        view = {m: dict(part, X=part["X"][version], slow=part["slow"][version])
+                for m, part in held_out.items()}
         summaries.update(fit_design(version, args.dead, args.team, train[version], view,
                                     matches, args, start))
     if args.reference in summaries and len(summaries) > 1:

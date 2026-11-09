@@ -132,7 +132,8 @@ def test_fit_design_writes_one_model_file_per_pair_of_kinds(tmp_path, monkeypatc
     monkeypatch.setattr(train_models, "GRID", (1.0,))
     monkeypatch.setattr(train_models, "TREES", {("team", "trees"): small,
                                                 ("dead", "trees"): small})
-    args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False)
+    args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False,
+                                 grids=["base"], speed_factors=[])
 
     summaries = train_models.fit_design("v1", ["logistic", "trees"], ["logistic", "trees"],
                                         train, held_out, matches, args, time.time())
@@ -148,6 +149,67 @@ def test_fit_design_writes_one_model_file_per_pair_of_kinds(tmp_path, monkeypatc
     printed = capsys.readouterr().out
     assert "team trees" in printed and "dead trees" in printed
     assert "v1+trees+deadtrees against v1+trees" in printed and "verdict:" in printed
+
+
+def test_the_wide_grid_and_the_speed_check_run_end_to_end(tmp_path, monkeypatch, capsys):
+    rng = np.random.default_rng(7)
+    matches = ["M1", "M2", "M3"]
+    train, held_out, truth = synthetic_design_inputs(rng, matches)
+    speed = design_names("v1").index("speed_all")
+    for part in held_out.values():
+        slow = part["X"].copy()
+        slow[:, speed] -= 0.5  # slower players: the synthetic dead frames are the slow ones
+        part["slow"] = {0.8: slow}
+    axes = {"team_switch": (4, 16), "dead_switch": (16,), "dead_bias": (0.0,)}
+    monkeypatch.setattr(train_models, "labels_at",
+                        lambda match, tolerances: {t: truth[match] for t in tolerances})
+    monkeypatch.setattr(train_models, "DECODER_AXES", axes)
+    monkeypatch.setattr(train_models, "WIDE_DEAD_BIAS", (1.0,))
+    monkeypatch.setattr(train_models, "GRID", (1.0,))
+    args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False,
+                                 grids=["base", "wide"], speed_factors=[0.8])
+
+    summaries = train_models.fit_design("v1", ["logistic"], ["logistic"], train, held_out,
+                                        matches, args, time.time())
+
+    assert set(summaries) == {"v1", "v1+widebias"}
+    wide = load(str(tmp_path / "possession_v1+widebias.json"))
+    assert wide["fitted_on"]["decoder_grid"]["dead_bias"] == [0.0, 1.0]
+    assert load(str(tmp_path / "possession_v1.json"))["fitted_on"]["decoder_grid"][
+        "dead_bias"] == [0.0]
+    for summary in summaries.values():
+        assert set(summary["speed"]) == {1.0, 0.8}
+        # Unscaled, the check decodes exactly what the held-out score was computed from.
+        assert summary["speed"][1.0][:2] == summary["pooled"][1.0]
+        assert summary["speed"][0.8][2] > summary["speed"][1.0][2]  # slower, so more dead
+        assert set(summary["nested"]) == set(matches)
+    printed = capsys.readouterr().out
+    assert "decoder grid wide" in printed and "speed check" in printed
+    assert "speed x0.8" in printed and "speed x1.0" in printed
+
+
+def test_slowed_scales_the_players_speeds_alone():
+    rng = np.random.default_rng(11)
+    features = rng.uniform(0.5, 5.0, size=(40, len(NAMES))).astype(np.float32)
+    features[3, NAMES.index("speed_home")] = np.nan
+    out = train_models.slowed(features, 0.8)
+    for j, name in enumerate(NAMES):
+        if name in train_models.PLAYER_SPEEDS:
+            assert np.allclose(out[:, j], 0.8 * features[:, j], equal_nan=True)
+        else:
+            assert np.array_equal(out[:, j], features[:, j])
+    assert np.isnan(out[3, NAMES.index("speed_home")])
+    assert out[0, NAMES.index("speed_all")] < features[0, NAMES.index("speed_all")]  # a copy
+
+
+def test_the_wide_grid_holds_every_base_setting():
+    base, wide = train_models.decoder_axes("base"), train_models.decoder_axes("wide")
+    assert list(wide) == list(base)  # the order decoded() hands them to viterbi in
+    assert set(itertools.product(*base.values())) < set(itertools.product(*wide.values()))
+    assert max(wide["dead_bias"]) > max(base["dead_bias"])
+    assert train_models.variant_name("v1", "trees", "trees-wide", "wide") == \
+        "v1+trees-wide+deadtrees+widebias"
+    assert train_models.variant_name("v1", "trees", "trees-wide") == "v1+trees-wide+deadtrees"
 
 
 def test_the_best_passing_variant_is_the_one_adopted():
