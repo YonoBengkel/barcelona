@@ -1,12 +1,20 @@
-"""Aggregate statistics of a tracking signal: how the ball and the players go missing.
+"""Aggregate statistics of a tracking signal: how the ball and the players go missing, and how
+fast the players seem to move.
 
 The same profile runs on the match's automatic tracking (scripts/atd_profile.py, which prints only
 these aggregates) and on the degraded practice matches (possession.simulate), so the simulator can
 be calibrated against the first and checked against it afterwards. Every number is a statistic
 over whole halves; nothing here is a label or a frame.
+
+The player speeds are measured exactly as possession.features measures speed_all (frame-to-frame
+steps, averaged over a centred second), because the models read that feature. Position noise
+inflates it most where players stand still, so its low percentiles show how noisy a tracking is
+(M11g).
 """
 
 import numpy as np
+
+from possession.features import SMOOTH_S, rolling_mean, row_mean
 
 FPS = 25
 PERCENTILES = (10, 25, 50, 75, 90, 95, 99)
@@ -66,11 +74,25 @@ def ball_speed(half):
     return speed
 
 
+def player_speeds(half):
+    """(mean over the tracked players, each player's) speed over a centred second, m/s, per frame:
+    the first is possession.features' speed_all, the second the same per player slot, (frames,
+    slots). NaN where nothing was tracked in the second."""
+    window = int(SMOOTH_S * FPS) // 2
+    x, y = half["x"].astype(np.float64), half["y"].astype(np.float64)
+    first = np.full((1, x.shape[1]), np.nan)
+    step = np.hypot(np.diff(x, axis=0, prepend=first), np.diff(y, axis=0, prepend=first)) * FPS
+    each = np.column_stack([rolling_mean(step[:, j], window) for j in range(step.shape[1])]) \
+        if step.shape[1] else np.empty((len(step), 0))
+    return rolling_mean(row_mean(step)[0], window), each
+
+
 def profile(halves, pitch):
     """Aggregate profile over a list of halves (dicts with ball_x, ball_y, x, y, team)."""
     length, width = pitch
     seen_runs, gap_runs, objects, home, away, segments = [], [], [], [], [], []
     starts_speed, all_speed, near = [], [], {r: ([], []) for r in CROWD_RADII_M}
+    players_mean, players_each, players_seen = [], [], []
     zones = {"outer_third": [0, 0], "penalty_box": [0, 0], "near_line": [0, 0]}
     outside, frames_seen, frames_total = 0, 0, 0
 
@@ -88,6 +110,11 @@ def profile(halves, pitch):
         away.append(tracked[:, half["team"] == 1].sum(axis=1))
         for slot in range(tracked.shape[1]):
             segments.append(run_lengths(tracked[:, slot])[0])
+
+        mean, each = player_speeds(half)
+        players_mean.append(mean)
+        players_each.append(each.ravel())
+        players_seen.append(mean[present])
 
         speed = ball_speed(half)
         starts = gap_starts(present)
@@ -130,6 +157,9 @@ def profile(halves, pitch):
         "zone_share_when_seen": {k: v[1] / frames_seen if frames_seen else float("nan")
                                  for k, v in zones.items()},
         "ball_outside_pitch_when_seen": outside / frames_seen if frames_seen else float("nan"),
+        "player_speed": describe(_finite(players_mean)),
+        "player_speed_ball_seen": describe(_finite(players_seen)),
+        "player_speed_each": describe(_finite(players_each)),
     }
 
 
@@ -182,5 +212,8 @@ def format_profile(result):
             r["zone_share_before_gap"]["near_line"], r["zone_share_when_seen"]["near_line"]),
         "ball seen outside the pitch lines on {:.2%} of seen frames".format(
             r["ball_outside_pitch_when_seen"]),
+        "players' mean speed over 1 s:           " + dist(r["player_speed"], " m/s"),
+        "  the same while the ball is seen:      " + dist(r["player_speed_ball_seen"], " m/s"),
+        "each player's speed over 1 s:           " + dist(r["player_speed_each"], " m/s"),
     ]
     return lines

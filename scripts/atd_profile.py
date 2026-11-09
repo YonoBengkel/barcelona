@@ -2,9 +2,10 @@
 
 The practice ground (IDSSE) has complete, corrected tracking. possession.simulate degrades it to
 look like this match's automatic tracking, and these aggregates are its target: how often and for
-how long the ball disappears, in what situations, and how many players are tracked. This is
-unsupervised use of the match's own tracking: nothing here reads a ground truth or a label, and
-every number is a statistic over both graded halves (AGENTS.md).
+how long the ball disappears, in what situations, how many players are tracked, and how fast the
+players seem to move, which shows how noisy the positions are (M11g). This is unsupervised use of
+the match's own tracking: nothing here reads a ground truth or a label, and every number is a
+statistic over both graded halves (AGENTS.md).
 
     python scripts/atd_profile.py
 

@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from possession.profile import gap_starts, profile, run_lengths
+from possession.features import NAMES, compute
+from possession.profile import gap_starts, player_speeds, profile, run_lengths
 from possession.simulate import DegradeParams, degrade
 
 
@@ -37,6 +38,28 @@ def test_profile_of_clean_tracking():
     result = profile([make_half(n=2000)], pitch=(105.0, 68.0))
     assert result["ball_seen_share"] == 1.0
     assert result["objects_per_frame"]["mean"] == 22
+
+
+def test_player_speeds_are_the_features_speed_all():
+    half = make_half(n=600)
+    half["x"][100:140, 3] = np.nan  # a player lost for a while
+    mean, each = player_speeds(half)
+    speed_all = compute(half, (105.0, 68.0))[0][:, NAMES.index("speed_all")]
+    assert np.allclose(mean, speed_all, rtol=1e-5, equal_nan=True)
+    assert each.shape == half["x"].shape
+    assert np.isnan(each[112:129, 3]).all()  # every second around them lost the player
+    assert np.isfinite(each[112:129, 4]).all()
+
+
+def test_position_noise_shows_in_the_players_speeds():
+    half = make_half(n=4000)
+    half["x"] = np.repeat(half["x"][:1], 4000, axis=0)  # every player stands still
+    half["y"] = np.repeat(half["y"][:1], 4000, axis=0)
+    quiet = profile([degrade(half, DegradeParams(player_noise_m=0.0), seed=0)], (105.0, 68.0))
+    noisy = profile([degrade(half, DegradeParams(player_noise_m=0.15), seed=0)], (105.0, 68.0))
+    assert quiet["player_speed_each"]["p50"] < 0.01 and quiet["player_speed"]["p90"] < 0.01
+    # 0.15 m drifting over a second steps about 1.06 m/s per axis: about 1.3 m/s standing still.
+    assert 1.0 < noisy["player_speed_each"]["p50"] < 1.7
 
 
 def test_ball_missing_share_hits_the_target():

@@ -7,7 +7,15 @@ local perturbations around the best with a shrinking scale -- scores each candid
 degraded IDSSE profile lands from TARGET, and prints the best one, to be copied into
 DegradeParams' defaults. Public data only; reads no match data.
 
+--players fits the players' position noise instead (M11g). The ball search above runs with that
+noise off, so it was never set against the match: 0.15 m drifting over a second reads as about
+1.3 m/s for a player who stands still. Each level of NOISE_GRID degrades every half of the matches
+named (all seven by default), and the players' speed percentiles (possession.profile, measured as
+the models' speed_all) are set against TARGET_PLAYERS by squared log-ratio; the level with the
+lowest loss is printed, to be copied into DegradeParams.player_noise_m.
+
     python scripts/calibrate_simulator.py [--samples 80] [--local 120] [MATCH_ID ...]
+    python scripts/calibrate_simulator.py --players [MATCH_ID ...]
 """
 
 import argparse
@@ -39,6 +47,13 @@ SEARCH = {  # parameter: (low, high)
     "short_gap_share": (0.05, 0.3), "long_gap_median_s": (8.0, 18.0),
     "long_gap_sigma": (0.6, 1.2),
 }
+# The players' speed percentiles of the match's tracking, in m/s: {statistic: {percentile: value}}
+# for 'player_speed' and 'player_speed_each' of possession.profile. None until
+# scripts/atd_profile.py has printed them; --players then prints the degraded side alone.
+TARGET_PLAYERS = None
+PLAYER_STATISTICS = ("player_speed", "player_speed_each")
+PLAYER_PERCENTILES = ("p10", "p25", "p50", "p75", "p90")
+NOISE_GRID = (0.0, 0.025, 0.05, 0.075, 0.1, 0.15)
 
 
 def summary(halves, params):
@@ -75,18 +90,65 @@ def loss(got):
     return float(total) if np.isfinite(total) else float("inf")
 
 
+def player_summary(halves, params):
+    """{statistic: {percentile: m/s}} of the players' speeds on the halves degraded with params."""
+    degraded = [degrade(h, params, seed=i) for i, h in enumerate(halves)]
+    p = profile(degraded, params.pitch)
+    return {name: {k: p[name].get(k, np.nan) for k in PLAYER_PERCENTILES}
+            for name in PLAYER_STATISTICS}
+
+
+def player_loss(got, target):
+    """Squared log-ratio of every percentile to the target's."""
+    total = sum(np.log(max(got[name][k], 1e-3) / want) ** 2
+                for name, wants in target.items() for k, want in wants.items())
+    return float(total) if np.isfinite(total) else float("inf")
+
+
+def fit_players(halves, target=None):
+    """(best player_noise_m, its loss) over NOISE_GRID, printing every level's percentiles; the
+    best is None without a target."""
+    def cells(summary):
+        return "  ".join(" ".join("{:5.2f}".format(summary[name][k]) for k in PLAYER_PERCENTILES)
+                         for name in PLAYER_STATISTICS)
+
+    print("players' speeds over 1 s, {} in m/s: mean over the players, then each player".format(
+        "/".join(PLAYER_PERCENTILES)))
+    best = (None, float("inf"))
+    for noise in NOISE_GRID:
+        got = player_summary(halves, replace(DegradeParams(), player_noise_m=noise))
+        value = player_loss(got, target) if target else float("nan")
+        print("  noise {:.3f} m  {}  loss {:.3f}".format(noise, cells(got), value))
+        if target and value < best[1]:
+            best = (noise, value)
+    if target:
+        print("  match          {}".format(cells(target)))
+        print("best player_noise_m {:.3f} (loss {:.3f})".format(*best))
+    else:
+        print("no TARGET_PLAYERS yet: run scripts/atd_profile.py on the laptop first")
+    return best
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--samples", type=int, default=80)
     parser.add_argument("--local", type=int, default=120)
     parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("matches", nargs="*", default=["J03WOH", "J03WMX", "J03WQQ"])
+    parser.add_argument("--players", action="store_true",
+                        help="fit the players' position noise to TARGET_PLAYERS instead (M11g)")
+    parser.add_argument("matches", nargs="*")
     args = parser.parse_args()
+    matches = args.matches or (sorted(ex.MATCHES) if args.players
+                               else ["J03WOH", "J03WMX", "J03WQQ"])
 
     halves = []
-    for match_id in args.matches:
+    for match_id in matches:
         _, match_halves, _ = ex.load_match(match_id)
         halves += [match_halves[s] for s in ex.SECTIONS]
+    if args.players:
+        print("{} halves of {}".format(len(halves), ", ".join(matches)))
+        fit_players(halves, TARGET_PLAYERS)
+        return 0
 
     rng = np.random.default_rng(args.seed)
     best = (loss(summary(halves, DegradeParams())), DegradeParams())
