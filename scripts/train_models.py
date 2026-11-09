@@ -15,6 +15,9 @@ lines); the setting written out is the one that does best on all seven. The orga
 (nearest player, majority over +/- 2 s) is scored on the same frames, at label tolerances of 0.5,
 1 and 2 s.
 
+It then prints where the held-out pipeline goes wrong (possession.diagnose): its calls and
+errors by ball state, and the cause of every possession it misses.
+
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
 models/possession_v1.json. Public data only; reads no match data. A job for Kaggle
 (kaggle/README.md), not for the team's laptop.
@@ -36,6 +39,7 @@ from sklearn.metrics import log_loss, roc_auc_score
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+from possession import diagnose  # noqa: E402
 from possession import external as ex  # noqa: E402
 from possession import practice  # noqa: E402
 from possession.decode import viterbi  # noqa: E402
@@ -186,8 +190,10 @@ def fit_decoder(held_out, oof, matches):
 
     rows = collections.defaultdict(list)
     rates = collections.defaultdict(list)
+    held_out_codes = {}
     for match in matches:
         nested, overall = decoded(oof[match], [DECODER_GRID[chosen[match]], DECODER_GRID[final]])
+        held_out_codes[match] = nested
         nearest = halves_of(held_out[match], "nearest")
         base = practice.joined([practice.codes(smooth(n, BASELINE_WINDOW)) for n in nearest],
                                gap=pm.X)
@@ -231,7 +237,36 @@ def fit_decoder(held_out, oof, matches):
                                                  round(float(length.max()), 2)]}
         print("possessions, {}: {:.1f}-{:.1f} per 10 min, mean {:.1f}-{:.1f} s".format(
             name, rate.min(), rate.max(), length.min(), length.max()))
-    return setting, practice_range
+    return setting, practice_range, held_out_codes
+
+
+def report_errors(held_out, predicted, matches):
+    """Where the held-out pipeline goes wrong (M10): by ball state, and possession by possession.
+
+    predicted: per match, the codes the nested decoder gave, X between halves. The same ball-state
+    table, without the truth columns, is what scripts/make_submission.py prints for the match.
+    """
+    states, preds, truths, outcomes, shares = [], [], [], [], []
+    for match in matches:
+        part = held_out[match]
+        gt = practice.joined([practice.codes(l) for l in halves_of(part, "labels")], gap=pm.X)
+        state = practice.joined([diagnose.ball_states(X) for X in halves_of(part, "X")], gap=-1)
+        graded = gt != pm.X
+        states.append(state[graded])
+        preds.append(predicted[match][graded])
+        truths.append(gt[graded])
+        outcomes.append(diagnose.spell_outcomes(gt, predicted[match]))
+        shares.append("{} {:.1%}/{:.1%}".format(match, np.mean(gt[graded] == pm.D),
+                                                np.mean(predicted[match][graded] == pm.D)))
+    states, preds, truths = (np.concatenate(a) for a in (states, preds, truths))
+    print("\nerrors of the held-out pipeline (M10), labels at +/-1 s")
+    for line in diagnose.format_state_table(diagnose.state_table(states, preds, truths)):
+        print(line)
+    for line in diagnose.format_confusion(truths, preds):
+        print(line)
+    for line in diagnose.format_outcomes(diagnose.pool(outcomes)):
+        print(line)
+    print("dead-ball share per match, true/ours: " + ", ".join(shares))
 
 
 def main():
@@ -260,7 +295,8 @@ def main():
     oof = {m: [log_state_probabilities({"dead": folds[best_dead][m]["dead"],
                                         "team": folds[best_team][m]["team"]}, X)
                for X in halves_of(held_out[m], "X")] for m in matches}
-    decoder, practice_range = fit_decoder(held_out, oof, matches)
+    decoder, practice_range, held_out_codes = fit_decoder(held_out, oof, matches)
+    report_errors(held_out, held_out_codes, matches)
 
     models = {"dead": fit(*stack(train, matches, "dead"), C=best_dead),
               "team": fit(*stack(train, matches, "team"), C=best_team),

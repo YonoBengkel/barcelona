@@ -20,7 +20,10 @@ the scripts that read it run on the laptop only (see the table below).
 
 ## Each run
 
-1. Set `REF` (normally `main`) and `COMMAND` at the top of the cell.
+Work in progress is pushed to the `dev` branch, which the notebook runs (`REF = "dev"`). The
+tests run in every run, before the job, so `main` is moved up to `dev` only after a run passes.
+
+1. Set `REF` and `COMMAND` at the top of the cell.
 2. Save Version > Save & Run All (Commit). The run carries on with the browser closed.
 3. When it has finished, open that version > Output, and download `kaggle-results.zip`.
 4. Put the zip at the repository root on the laptop and unzip it there. The job's outputs land at

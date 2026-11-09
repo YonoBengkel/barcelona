@@ -10,7 +10,7 @@
 # The token goes to a single git command as a one-off header: it is never written to disk or
 # printed, and the commands after the clone run without it.
 
-REF = "main"                          # branch, tag or commit of YonoBengkel/barcelona
+REF = "dev"                           # branch, tag or commit of YonoBengkel/barcelona
 COMMAND = "scripts/train_models.py"   # the job: a script and its arguments, from the repo root
 
 import base64

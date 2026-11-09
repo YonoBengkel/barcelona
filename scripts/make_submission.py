@@ -18,6 +18,8 @@ tracking. What it prints:
 - how many possessions the file reports per ten minutes and how long they last, beside the range
   on the practice matches;
 - whether the attacking directions inferred from the tracking agree with the metadata, yes or no;
+- how often each label is called while the ball is seen, bridged, or missing for up to 5 s,
+  5-15 s or longer, to compare with the same table on the practice ground (possession.diagnose);
 - the scores on the public five-minute window. They check that the pipeline is wired the right
   way round and never choose anything (AGENTS.md, rule 3);
 - the file's SHA-256, to compare two runs.
@@ -55,6 +57,7 @@ def shown(path):
 def main():
     import possession_metrics as pm
     from games import GAME, GAMES, half_video_blocks, require
+    from possession import diagnose, practice
     from possession.atd import halves, metadata_attack_directions, read_atd
     from possession.decode import decode
     from possession.features import FPS, attack_directions, compute
@@ -77,10 +80,13 @@ def main():
     atd = read_atd(meta_path, raw_path, n_frames, pitch)
     declared = metadata_attack_directions(meta_path)
 
-    parts, agreement = [], []
+    parts, agreement, states, calls = [], [], [], []
     for number, half in enumerate(halves(atd, half_video_blocks(GAME))):
-        evidence = log_state_probabilities(models, design(compute(half, pitch)[0]))
-        parts.append((half["first_frame"], decode(evidence, models["decoder"])))
+        features = compute(half, pitch)[0]
+        labels = decode(log_state_probabilities(models, design(features)), models["decoder"])
+        parts.append((half["first_frame"], labels))
+        states.append(diagnose.ball_states(features))
+        calls.append(practice.codes(labels))
         if 0 in declared:
             agreement.append("not readable from the metadata")
         else:
@@ -123,6 +129,10 @@ def main():
                       short, long_, "yes" if inside else "no"))
     print("attacking directions inferred from the tracking agree with the metadata: first half "
           "{}, second half {}".format(*agreement))
+    print("calls by ball state on the graded frames (train_models' log has the practice ground's):")
+    for line in diagnose.format_state_table(diagnose.state_table(np.concatenate(states),
+                                                                 np.concatenate(calls))):
+        print("  " + line)
 
     public = pm.evaluate(pm.label_codes(pm.read_label_csv(PUBLIC_GT)), codes)
     print("public five minutes, a wiring check that never chooses anything: macroF1 {:.4f} "

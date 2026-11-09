@@ -3,10 +3,9 @@ alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE
 automatic-tracking quality), `practice` (the practice ground and its official scoring),
 `predictors` (the organisers' baseline on our arrays), `features` (33 per-frame features from
 positions alone), `models` (the dead-ball and team logistic regressions, applied with numpy),
-`decode` (the three-state hidden Markov model and its Viterbi decoder) and `submission` (the
-CSV writer); the scripts under "How to run"; and the Kaggle runner in `kaggle/`. The decoder's
-costs are still to be chosen by a Kaggle run of `scripts/train_models.py`; rewrite this file from
-the code as later milestones land.
+`decode` (the three-state hidden Markov model and its Viterbi decoder), `submission` (the CSV
+writer) and `diagnose` (errors by ball state and by possession); the scripts under "How to run";
+and the Kaggle runner in `kaggle/`. Rewrite this file from the code as later milestones land.
 
 # Architecture
 

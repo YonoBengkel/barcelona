@@ -9,6 +9,8 @@ import os
 
 import numpy as np
 
+from possession.features import NAMES
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location(
     "train_models", os.path.join(ROOT, "scripts", "train_models.py"))
@@ -26,7 +28,11 @@ def synthetic_match(rng):
             + rng.uniform(0, 0.5, size=(len(labels), 3))
         evidence.append(np.log(p / p.sum(axis=1, keepdims=True)))
     nearest = [np.select([h == "H", h == "A"], [0, 1], -1).astype(np.int8) for h in halves]
-    part = {"labels": np.concatenate(halves), "nearest": np.concatenate(nearest),
+    labels = np.concatenate(halves)
+    X = np.zeros((len(labels), len(NAMES)), dtype=np.float32)  # only the ball columns matter
+    X[:, NAMES.index("ball_seen")] = rng.random(len(labels)) < 0.6
+    X[:, NAMES.index("gap_length")] = np.log1p(rng.uniform(0, 30, len(labels)))
+    part = {"labels": labels, "nearest": np.concatenate(nearest), "X": X,
             "lengths": [len(h) for h in halves]}
     return halves, part, evidence
 
@@ -43,11 +49,14 @@ def test_the_decoder_search_runs_end_to_end(monkeypatch, capsys):
     monkeypatch.setattr(train_models, "DECODER_AXES", axes)
     monkeypatch.setattr(train_models, "DECODER_GRID", tuple(itertools.product(*axes.values())))
 
-    setting, practice_range = train_models.fit_decoder(held_out, oof, matches)
+    setting, practice_range, predicted = train_models.fit_decoder(held_out, oof, matches)
+    train_models.report_errors(held_out, predicted, matches)
 
     assert set(setting) == set(axes) and setting["team_switch"] in axes["team_switch"]
     for name in ("labels", "ours"):
         low, high = practice_range[name]["spells_per_10min"]
         assert 0 < low <= high
+    assert all(len(predicted[m]) == len(held_out[m]["labels"]) + 1 for m in matches)
     printed = capsys.readouterr().out
     assert "baseline_smooth50" in printed and "chosen on all seven" in printed
+    assert "possessions at IoU 0.5" in printed and "dead-ball share per match" in printed

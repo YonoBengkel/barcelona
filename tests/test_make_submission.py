@@ -96,6 +96,7 @@ def test_a_valid_file_and_aggregates_only(tmp_path, monkeypatch, capsys):
     assert all(label == "X" for label, g in zip(labels, graded) if not g)
     printed = capsys.readouterr().out
     assert "first half yes, second half yes" in printed
+    assert "gap >15 s" in printed and "true D" not in printed  # no labels on the match
     assert "public five minutes" in printed and "SHA-256" in printed
 
 
