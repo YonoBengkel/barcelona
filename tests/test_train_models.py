@@ -53,6 +53,7 @@ def test_the_decoder_search_runs_end_to_end(monkeypatch, capsys):
 
     setting, practice_range, predicted, summary = train_models.fit_decoder(held_out, oof, matches)
     train_models.report_errors(held_out, predicted, matches)
+    train_models.oracle_headroom(held_out, oof, matches)
 
     assert set(setting) == set(axes) and setting["team_switch"] in axes["team_switch"]
     for name in ("labels", "ours"):
@@ -63,6 +64,29 @@ def test_the_decoder_search_runs_end_to_end(monkeypatch, capsys):
     printed = capsys.readouterr().out
     assert "baseline_smooth50" in printed and "chosen on all seven" in printed
     assert "possessions at IoU 0.5" in printed and "dead-ball share per match" in printed
+    assert "perfect-evidence check" in printed and "true both" in printed
+
+
+def test_oracle_evidence_turns_the_call_and_keeps_the_confidence():
+    rng = np.random.default_rng(3)
+    log_p = np.log(rng.dirichlet(np.ones(3), size=300))
+    truth = rng.integers(0, 3, size=300)  # H 0, A 1, D 2, as possession_metrics codes them
+    assert np.allclose(train_models.oracle_evidence(log_p, truth, "model"), log_p)
+    for variant in train_models.ORACLES:
+        assert np.allclose(np.exp(train_models.oracle_evidence(log_p, truth, variant)).sum(1), 1)
+
+    team = np.exp(train_models.oracle_evidence(log_p, truth, "true team"))
+    alive = truth != 2
+    right = team[np.flatnonzero(alive), truth[alive]]
+    wrong = team[np.flatnonzero(alive), 1 - truth[alive]]
+    assert (right >= wrong).all()
+    p = np.exp(log_p)
+    before = np.sort(p[:, :2] / p[:, :2].sum(1, keepdims=True), axis=1)
+    after = np.sort(team[:, :2] / team[:, :2].sum(1, keepdims=True), axis=1)
+    assert np.allclose(before, after)  # the same confidence, pointed the right way
+
+    dead = np.exp(train_models.oracle_evidence(log_p, truth, "true dead"))[:, 2]
+    assert (dead[truth == 2] >= 0.5).all() and (dead[truth != 2] <= 0.5).all()
 
 
 def test_a_design_is_adopted_only_by_the_rule():

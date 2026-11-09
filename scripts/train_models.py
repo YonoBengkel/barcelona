@@ -16,7 +16,9 @@ lines); the setting written out is the one that does best on all seven. The orga
 1 and 2 s.
 
 It then prints where the held-out pipeline goes wrong (possession.diagnose): its calls and
-errors by ball state, and the cause of every possession it misses.
+errors by ball state, and the cause of every possession it misses. With --oracle it also decodes
+the held-out evidence with its team call, its dead-ball call or both turned to the truth, at the
+model's own confidence, which bounds what fixing each part could gain.
 
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
 models/possession_<design>.json.
@@ -297,6 +299,56 @@ def report_errors(held_out, predicted, matches):
     print("dead-ball share per match, true/ours: " + ", ".join(shares))
 
 
+ORACLES = ("model", "true team", "true dead", "true both")
+
+
+def oracle_evidence(log_p, truth, variant):
+    """The held-out evidence with its team call, its dead-ball call or both turned to the truth,
+    each kept at the model's own confidence: a frame that said 70% home on a true away frame now
+    says 70% away. What is fixed is which way the evidence points, never how sure it is.
+
+    log_p: (frames, 3) log-probabilities of H, A, D; truth: the frames' codes.
+    """
+    log_alive = np.logaddexp(log_p[:, 0], log_p[:, 1])
+    team = log_p[:, :2] - log_alive[:, None]  # log P(H | alive), log P(A | alive)
+    dead = np.column_stack([log_alive, log_p[:, 2]])  # log P(alive), log P(D)
+    if variant in ("true team", "true both"):
+        sure, unsure = team.max(axis=1), team.min(axis=1)
+        team = np.where((truth == pm.H)[:, None], np.column_stack([sure, unsure]),
+                        np.where((truth == pm.A)[:, None], np.column_stack([unsure, sure]), team))
+    if variant in ("true dead", "true both"):
+        sure, unsure = dead.max(axis=1), dead.min(axis=1)
+        dead = np.where((truth == pm.D)[:, None], np.column_stack([unsure, sure]),
+                        np.column_stack([sure, unsure]))
+    return np.column_stack([dead[:, 0] + team[:, 0], dead[:, 0] + team[:, 1], dead[:, 1]])
+
+
+def oracle_headroom(held_out, oof, matches):
+    """How far the pipeline is from what its decoder could do with right evidence (M11c).
+
+    For each variant of oracle_evidence, the best pooled spellF1 over the decoder grid on all
+    seven matches, labels at +/-1 s. It is an upper bound chosen in sample, not a held-out score:
+    the gap between rows says which part, team or dead ball, holds the remaining score.
+    """
+    start = time.time()
+    print("\nperfect-evidence check (M11c), best setting on all seven, labels at +/-1 s; the "
+          "evidence keeps the model's confidence and only its direction is corrected")
+    truths = {m: [practice.codes(l) for l in halves_of(held_out[m], "labels")] for m in matches}
+    gts = {m: practice.joined(truths[m], gap=pm.X) for m in matches}
+    for variant in ORACLES:
+        table = [dict() for _ in DECODER_GRID]
+        for match in matches:
+            evidence = [oracle_evidence(log_p, truth, variant)
+                        for log_p, truth in zip(oof[match], truths[match])]
+            for k, pred in enumerate(decoded(evidence, DECODER_GRID)):
+                table[k][match] = practice.counts(gts[match], pred)
+        k = best(table, matches)
+        spell, macro = practice.pooled([table[k][m] for m in matches])
+        print("  {:<10} spellF1 {:.4f}  mF1 {:.4f}  at {} ({:.0f} s)".format(
+            variant, spell, macro, dict(zip(DECODER_AXES, DECODER_GRID[k])),
+            time.time() - start))
+
+
 def fit_design(version, train, held_out, matches, args, start):
     """Models, decoder and error report for one design; writes models/possession_<version>.json.
 
@@ -317,6 +369,8 @@ def fit_design(version, train, held_out, matches, args, start):
                for X in halves_of(held_out[m], "X")] for m in matches}
     decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof, matches)
     report_errors(held_out, held_out_codes, matches)
+    if args.oracle:
+        oracle_headroom(held_out, oof, matches)
 
     models = {"design": version,
               "dead": fit(*stack(train, matches, "dead"), C=best_dead, version=version),
@@ -362,6 +416,9 @@ def main():
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
+    # On for the M11c run (the notebook's command has no flags); off again afterwards.
+    parser.add_argument("--oracle", action=argparse.BooleanOptionalAction, default=True,
+                        help="also print the perfect-evidence check (about 7 minutes)")
     args = parser.parse_args()
     matches = sorted(ex.MATCHES)
 
