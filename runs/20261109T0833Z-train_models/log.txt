@@ -1,0 +1,111 @@
+commit c8360f081d0d39ab8cabeb8c24d000d3ef6e43f2
+job scripts/train_models.py
+4 CPUs, 1038 GB free in /tmp
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+..........................................................               [100%]
+58 passed in 14.32s
+
+$ /tmp/venv/bin/python scripts/train_models.py
+built rows in 286 s: dead 250672, team 276572
+
+===== design v1: 46 columns =====
+C=0.01  dead: logloss 0.1521 AUC 0.9854 acc 0.9441 (no-ball rule 0.7024) | team: logloss 0.2725 AUC 0.9547 acc 0.8918; where a nearest player exists ours 0.8985 vs nearest 0.7454; without one ours 0.8699 (23% of live frames)
+C=0.1   dead: logloss 0.1512 AUC 0.9855 acc 0.9443 (no-ball rule 0.7024) | team: logloss 0.2701 AUC 0.9554 acc 0.8923; where a nearest player exists ours 0.8985 vs nearest 0.7454; without one ours 0.8723 (23% of live frames)
+C=1.0   dead: logloss 0.1503 AUC 0.9857 acc 0.9447 (no-ball rule 0.7024) | team: logloss 0.2700 AUC 0.9554 acc 0.8924; where a nearest player exists ours 0.8981 vs nearest 0.7454; without one ours 0.8736 (23% of live frames)
+chosen C: dead 1.0, team 1.0 (418 s)
+  decoder grid on J03WMX: 12 s so far
+  decoder grid on J03WN1: 24 s so far
+  decoder grid on J03WOH: 35 s so far
+  decoder grid on J03WOY: 47 s so far
+  decoder grid on J03WPY: 58 s so far
+  decoder grid on J03WQQ: 70 s so far
+  decoder grid on J03WR9: 82 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (96 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6299  mF1 0.8902   spellF1 0.6337  mF1 0.8904   spellF1 0.2606  mF1 0.6069
++/-1 s       spellF1 0.6090  mF1 0.8888   spellF1 0.6130  mF1 0.8891   spellF1 0.2609  mF1 0.6063
++/-2 s       spellF1 0.5672  mF1 0.8858   spellF1 0.5708  mF1 0.8861   spellF1 0.2562  mF1 0.6061
+held-out spellF1 per match: J03WMX 0.609, J03WN1 0.574, J03WOH 0.630, J03WOY 0.604, J03WPY 0.613, J03WQQ 0.611, J03WR9 0.631
+settings chosen per match: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x3; {'team_switch': 16, 'dead_switch': 64, 'dead_bias': 0.0} x3; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.0} x1
+chosen on all seven: {'team_switch': 16, 'dead_switch': 64, 'dead_bias': 0.0}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 22.9-27.4 per 10 min, mean 10.0-14.8 s
+
+errors of the held-out pipeline (M10), labels at +/-1 s
+ball          frames        H        A        D   true D    right      m/s    m/s D m/s live
+seen           59.1%    37.2%    34.3%    28.5%    28.6%    90.9%     2.33     1.67     2.63
+bridged         0.1%    37.1%    42.7%    20.2%    19.1%    83.0%     2.25     1.70     2.43
+gap <=5 s       1.4%    32.2%    36.1%    31.7%    35.9%    81.1%     2.39     1.77     2.70
+gap 5-15 s     10.2%    29.9%    22.9%    47.2%    48.3%    84.5%     2.13     1.80     2.65
+gap >15 s      29.1%     9.9%    10.3%    79.9%    77.2%    90.3%     1.81     1.71     2.63
+all           100.0%    28.4%    26.2%    45.4%    44.8%    89.9%     2.12     1.71     2.63
+          called H  called A  called D
+true H       25.0%      2.9%      1.3%
+true A        2.3%     22.3%      1.4%
+true D        1.1%      1.1%     42.7%
+possessions at IoU 0.5: 2201 true, 1224 matched (55.6%); 1692 predicted, 468 unmatched
+  missed, by cause: wrong team 412 (42%), called dead 150 (15%), split 29 (3%), merged 298 (31%), edges off 88 (9%)
+  matched, by true length: <2 s 9% of 353, 2-5 s 40% of 607, 5-15 s 70% of 815, >=15 s 89% of 426
+  unmatched predictions, by kind: in a stoppage 58 (12%), wrong team 166 (35%), piece of one 244 (52%)
+dead-ball share per match, true/ours: J03WMX 41.5%/42.1%, J03WN1 51.7%/54.8%, J03WOH 47.6%/47.4%, J03WOY 46.5%/46.4%, J03WPY 44.3%/43.7%, J03WQQ 40.7%/40.6%, J03WR9 41.9%/43.2%
+wrote models/possession_v1.json (523 s so far)
+
+===== design v2: 52 columns =====
+C=0.01  dead: logloss 0.1517 AUC 0.9855 acc 0.9445 (no-ball rule 0.7024) | team: logloss 0.2720 AUC 0.9548 acc 0.8918; where a nearest player exists ours 0.8985 vs nearest 0.7454; without one ours 0.8697 (23% of live frames)
+C=0.1   dead: logloss 0.1509 AUC 0.9856 acc 0.9447 (no-ball rule 0.7024) | team: logloss 0.2696 AUC 0.9556 acc 0.8928; where a nearest player exists ours 0.8990 vs nearest 0.7454; without one ours 0.8724 (23% of live frames)
+C=1.0   dead: logloss 0.1500 AUC 0.9857 acc 0.9450 (no-ball rule 0.7024) | team: logloss 0.2695 AUC 0.9556 acc 0.8929; where a nearest player exists ours 0.8988 vs nearest 0.7454; without one ours 0.8740 (23% of live frames)
+chosen C: dead 1.0, team 1.0 (673 s)
+  decoder grid on J03WMX: 12 s so far
+  decoder grid on J03WN1: 25 s so far
+  decoder grid on J03WOH: 36 s so far
+  decoder grid on J03WOY: 49 s so far
+  decoder grid on J03WPY: 61 s so far
+  decoder grid on J03WQQ: 73 s so far
+  decoder grid on J03WR9: 85 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (99 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6305  mF1 0.8901   spellF1 0.6339  mF1 0.8897   spellF1 0.2606  mF1 0.6069
++/-1 s       spellF1 0.6072  mF1 0.8885   spellF1 0.6104  mF1 0.8881   spellF1 0.2609  mF1 0.6063
++/-2 s       spellF1 0.5673  mF1 0.8857   spellF1 0.5701  mF1 0.8852   spellF1 0.2562  mF1 0.6061
+held-out spellF1 per match: J03WMX 0.598, J03WN1 0.571, J03WOH 0.627, J03WOY 0.595, J03WPY 0.624, J03WQQ 0.613, J03WR9 0.635
+settings chosen per match: {'team_switch': 16, 'dead_switch': 64, 'dead_bias': 0.0} x4; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x3
+chosen on all seven: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 23.1-28.1 per 10 min, mean 9.9-14.8 s
+
+errors of the held-out pipeline (M10), labels at +/-1 s
+ball          frames        H        A        D   true D    right      m/s    m/s D m/s live
+seen           59.1%    37.0%    34.4%    28.5%    28.6%    90.9%     2.33     1.67     2.63
+bridged         0.1%    35.8%    43.3%    20.9%    19.1%    83.0%     2.25     1.70     2.43
+gap <=5 s       1.4%    31.2%    36.6%    32.2%    35.9%    81.5%     2.39     1.77     2.70
+gap 5-15 s     10.2%    29.3%    22.7%    48.0%    48.3%    84.1%     2.13     1.80     2.65
+gap >15 s      29.1%     9.9%    10.4%    79.7%    77.2%    90.3%     1.81     1.71     2.63
+all           100.0%    28.3%    26.3%    45.5%    44.8%    89.9%     2.12     1.71     2.63
+          called H  called A  called D
+true H       24.9%      2.9%      1.4%
+true A        2.3%     22.3%      1.4%
+true D        1.1%      1.1%     42.7%
+possessions at IoU 0.5: 2201 true, 1220 matched (55.4%); 1698 predicted, 478 unmatched
+  missed, by cause: wrong team 417 (43%), called dead 151 (15%), split 29 (3%), merged 297 (30%), edges off 87 (9%)
+  matched, by true length: <2 s 9% of 353, 2-5 s 40% of 607, 5-15 s 70% of 815, >=15 s 88% of 426
+  unmatched predictions, by kind: in a stoppage 62 (13%), wrong team 168 (35%), piece of one 248 (52%)
+dead-ball share per match, true/ours: J03WMX 41.5%/42.1%, J03WN1 51.7%/53.9%, J03WOH 47.6%/48.4%, J03WOY 46.5%/45.3%, J03WPY 44.3%/45.0%, J03WQQ 40.7%/40.7%, J03WR9 41.9%/43.1%
+wrote models/possession_v2.json (783 s so far)
+
+v2 against v1, held out: spellF1 -0.0018 at +/-1 s (+0.0006 at 0.5 s, +0.0001 at 2 s), macroF1 -0.0003; better on 3 of 7 matches
+  per match: J03WMX -0.011, J03WN1 -0.003, J03WOH -0.003, J03WOY -0.009, J03WPY +0.011, J03WQQ +0.002, J03WR9 +0.004
+  adoption rule (spellF1 +0.01 or more at 1 s, better on 5 or more matches, no loss at 0.5 s or 2 s, macroF1 down 0.005 at most): keep v1
+
+done in 783 s

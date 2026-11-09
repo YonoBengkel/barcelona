@@ -200,6 +200,7 @@
   "dead_switch": 64,
   "team_switch": 16
  },
+ "design": "v1",
  "fitted_on": {
   "decoder_grid": {
    "dead_bias": [

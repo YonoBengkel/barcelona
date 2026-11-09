@@ -30,7 +30,7 @@ rule fixed before the run is applied: a design replaces v1 only if its held-out 
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.
 
-    python scripts/train_models.py [--designs v1 v2] [--seeds 2] [--step 8] [--out-dir models]
+    python scripts/train_models.py [--designs v1 [v2 ...]] [--seeds 2] [--step 8] [--out-dir models]
 """
 
 import argparse
@@ -357,7 +357,8 @@ def compare(summaries, matches):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--designs", nargs="+", default=["v1", "v2"], choices=sorted(DESIGNS))
+    # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
+    parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
