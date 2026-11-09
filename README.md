@@ -44,7 +44,7 @@ One command regenerates the submission on CPU from the match data and the commit
 python scripts/make_submission.py    # writes evaluation/results/possession_v1.csv
 ```
 
-It applies `models/possession_v1.json`, which `scripts/train_models.py` fits on public data from
+It applies `models/possession_v1+trees.json`, which `scripts/train_models.py` fits on public data from
 other matches (see [kaggle/](kaggle/README.md)), and prints aggregates only, including the file's
 SHA-256 for comparing runs. To check the data bundle, the frame alignment and the environment in
 one go, this rebuilds the organisers' four baselines and confirms they match the committed ones:
