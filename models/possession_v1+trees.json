@@ -202,6 +202,7 @@
  },
  "design": "v1",
  "fitted_on": {
+  "dead_model": "logistic C=1",
   "decoder_grid": {
    "dead_bias": [
     -1.0,

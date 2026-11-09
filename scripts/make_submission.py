@@ -6,8 +6,8 @@ The one command that turns the match's tracking into the file the organisers sco
 tactical tracking and cuts out the two graded halves (games.half_video_blocks). It computes the
 position features (possession.features), weighs them with the dead-ball and team models, and
 decodes them into possessions with the decoder chosen on the practice ground
-(models/possession_v1+trees.json). It writes one frame,label row per video frame with LF line
-endings:
+(models/possession_v1+trees-wide+deadtrees.json). It writes one frame,label row per video frame
+with LF line endings:
 H, A or D inside the graded halves, and X outside them, where nothing is graded. The organisers'
 own validation checks the file before anything else is reported.
 
@@ -41,9 +41,10 @@ for path in (ROOT, os.path.join(ROOT, "evaluation")):
 from possession.safety import run_safely  # noqa: E402
 
 DEFAULT_OUT = os.path.join(ROOT, "evaluation", "results", "possession_v1.csv")
-# Adopted on 2026-11-09 by the rule in scripts/train_models.py (runs/20261109T0931Z-train_models):
-# held-out spellF1 0.630 against 0.609 for the logistic team model.
-DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+trees.json")
+# Adopted on 2026-11-09 by the rule in scripts/train_models.py (runs/20261109T1004Z-train_models):
+# trees for both the dead-ball and the team call, held-out spellF1 0.651 against 0.630 for
+# v1+trees (logistic dead-ball model, smaller team trees).
+DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+trees-wide+deadtrees.json")
 PUBLIC_GT = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
 # baseline_smooth50 on the public window, as docs/challenge/README.md prints it.
 PUBLIC_BASELINE = (0.6207, 0.3256)

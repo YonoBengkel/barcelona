@@ -24,10 +24,11 @@ per-frame arrays: ball xy or NaN · object xy · team
    ▼
 per-frame features ──► possession.models.design: log scale for skewed features, plus rolling
    │  means over 2.5-5 s for context
-   │  possession.models.log_state_probabilities: P(dead) from a logistic regression and
-   │  P(home | alive) from gradient-boosted trees, both in models/possession_v1+trees.json and
-   │  both applied with numpy alone in a fixed order (column by column for the regression, tree
-   │  by tree for the trees), so the result does not depend on the CPU's BLAS
+   │  possession.models.log_state_probabilities: P(dead) and P(home | alive), each from
+   │  gradient-boosted trees, both in models/possession_v1+trees-wide+deadtrees.json and both
+   │  applied with numpy alone, tree by tree in a fixed order (a logistic regression, the other
+   │  kind the code supports, is summed column by column), so the result does not depend on the
+   │  CPU's BLAS
    ▼
 per-frame evidence: log-probability of H, A, D
    │  possession.decode: three-state hidden Markov model, Viterbi. A path pays team_switch for
@@ -89,8 +90,9 @@ notebook cell:
 
 ```bash
 scripts/train_models.py        # fit the models and choose the decoder, match by match, for each
-                               # feature design (v1, v2); write models/possession_<design>.json
-                               # and set each design against v1 by a rule fixed in the code
+                               # pair of dead-ball and team model kinds; write
+                               # models/possession_<variant>.json and set each variant against
+                               # the adopted one by a rule fixed in the code
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)
@@ -115,10 +117,10 @@ every file's size and digest. The first read of an IDSSE match parses its XML (a
 laptop) and caches the arrays under `external/idsse/cache/`; later reads take a fraction of a
 second.
 
-`scripts/make_submission.py` applies `models/possession_v1+trees.json` (adopted on 2026-11-09 by
-the rule in `scripts/train_models.py`; `--models` picks another file). The file must carry a
-`decoder` section, written by a Kaggle run of `scripts/train_models.py`; without one the script
-stops before it reads the match.
+`scripts/make_submission.py` applies `models/possession_v1+trees-wide+deadtrees.json` (adopted on
+2026-11-09 by the rule in `scripts/train_models.py`; `--models` picks another file). The file
+must carry a `decoder` section, written by a Kaggle run of `scripts/train_models.py`; without one
+the script stops before it reads the match.
 
 ## Application layers
 
