@@ -7,6 +7,12 @@ local perturbations around the best with a shrinking scale -- scores each candid
 degraded IDSSE profile lands from TARGET, and prints the best one, to be copied into
 DegradeParams' defaults. Public data only; reads no match data.
 
+Since M11h TARGET also holds the players' median speed while the ball is seen and inside gaps of
+5-15 s and over 15 s, from the ball-state table scripts/make_submission.py printed for the match
+on 2026-11-09. Players slow down when play stops, so these say whether the match's tracking loses
+the ball in play or at stoppages, which dead_weight sets and nothing else in TARGET pinned down:
+the search before M11h left it at none.
+
 --players fits the players' position noise instead (M11g). The ball search above runs with that
 noise off, so it was never set against the match: 0.15 m drifting over a second reads as about
 1.3 m/s for a player who stands still. Each level of NOISE_GRID degrades every half of the matches
@@ -40,7 +46,15 @@ TARGET = {
     "box_before": 0.314, "box_seen": 0.136,
     "crowd2_before": 0.77, "crowd2_seen": 0.58,
     "outside_seen": 0.0419,
+    # M11h: the players' median speed by ball state, m/s.
+    "players_seen_p50": 1.93, "players_gap_5_15_p50": 1.31, "players_gap_15_p50": 0.91,
 }
+# The profile's ball state behind each of those, and their weight in the loss: like the zone
+# shares, heavy enough that a 30% miss in a gap's median speed costs as much as the rest of the
+# fit's remaining error.
+PLAYER_STATES = {"players_seen_p50": "seen", "players_gap_5_15_p50": "gap 5-15 s",
+                 "players_gap_15_p50": "gap >15 s"}
+PLAYER_STATE_WEIGHT = 10.0
 SEARCH = {  # parameter: (low, high)
     "line_weight": (0.0, 3.0), "box_weight": (0.0, 3.0), "slow_weight": (0.0, 3.0),
     "crowd_weight": (0.0, 0.8), "dead_weight": (0.0, 4.0), "outside_visible": (0.0, 0.5),
@@ -79,6 +93,8 @@ def summary(halves, params):
         "crowd2_before": p["crowding_before_gap"][2.0],
         "crowd2_seen": p["crowding_when_seen"][2.0],
         "outside_seen": p["ball_outside_pitch_when_seen"],
+        **{key: p["player_speed_by_state"][state].get("p50", np.nan)
+           for key, state in PLAYER_STATES.items()},
     }
 
 
@@ -94,6 +110,8 @@ def loss(got):
         total += (10 * (got[key] - TARGET[key])) ** 2
     for key in ("crowd2_before", "crowd2_seen"):
         total += (2 * (got[key] - TARGET[key])) ** 2
+    for key in PLAYER_STATES:
+        total += PLAYER_STATE_WEIGHT * np.log(max(got[key], 1e-3) / TARGET[key]) ** 2
     return float(total) if np.isfinite(total) else float("inf")
 
 

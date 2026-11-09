@@ -9,18 +9,23 @@ over whole halves; nothing here is a label or a frame.
 The player speeds are measured exactly as possession.features measures speed_all (frame-to-frame
 steps, averaged over a centred second), because the models read that feature. Position noise
 inflates it most where players stand still, so its low percentiles show how noisy a tracking is
-(M11g).
+(M11g). Split by how long the ball has been missing, they show whether a tracking loses the ball in
+play or at stoppages, where players slow down (M11h); the split is possession.diagnose's ball
+states, as scripts/make_submission.py prints them.
 """
 
 import numpy as np
 
-from possession.features import SMOOTH_S, rolling_mean, row_mean
+from possession.features import SMOOTH_S, gap_frames, rolling_mean, row_mean
 
 FPS = 25
 PERCENTILES = (10, 25, 50, 75, 90, 95, 99)
 # Gaps shorter than this are flicker, not occlusions; context is measured on the longer ones.
 CONTEXT_MIN_GAP = 5
 CROWD_RADII_M = (2.0, 5.0)
+# Ball states for the players' speeds: (name, shortest gap, longest gap) in seconds, the ones of
+# possession.diagnose.STATES that bridging cannot touch.
+SPEED_STATES = (("seen", 0.0, 0.0), ("gap 5-15 s", 5.0, 15.0), ("gap >15 s", 15.0, np.inf))
 
 
 def run_lengths(flags):
@@ -93,6 +98,7 @@ def profile(halves, pitch):
     seen_runs, gap_runs, objects, home, away, segments = [], [], [], [], [], []
     starts_speed, all_speed, near = [], [], {r: ([], []) for r in CROWD_RADII_M}
     players_mean, players_each, players_seen = [], [], []
+    players_state = {name: [] for name, _, _ in SPEED_STATES}
     zones = {"outer_third": [0, 0], "penalty_box": [0, 0], "near_line": [0, 0]}
     outside, frames_seen, frames_total = 0, 0, 0
 
@@ -115,6 +121,10 @@ def profile(halves, pitch):
         players_mean.append(mean)
         players_each.append(each.ravel())
         players_seen.append(mean[present])
+        gap_s = gap_frames(present)[2] / FPS  # length of the gap each frame sits in, 0 if seen
+        for name, low, high in SPEED_STATES:
+            mask = present if name == "seen" else ~present & (gap_s > low) & (gap_s <= high)
+            players_state[name].append(mean[mask])
 
         speed = ball_speed(half)
         starts = gap_starts(present)
@@ -160,6 +170,8 @@ def profile(halves, pitch):
         "player_speed": describe(_finite(players_mean)),
         "player_speed_ball_seen": describe(_finite(players_seen)),
         "player_speed_each": describe(_finite(players_each)),
+        "player_speed_by_state": {name: describe(_finite(players_state[name]))
+                                  for name, _, _ in SPEED_STATES},
     }
 
 
@@ -215,5 +227,8 @@ def format_profile(result):
         "players' mean speed over 1 s:           " + dist(r["player_speed"], " m/s"),
         "  the same while the ball is seen:      " + dist(r["player_speed_ball_seen"], " m/s"),
         "each player's speed over 1 s:           " + dist(r["player_speed_each"], " m/s"),
+        "players' median speed by ball state: " + ", ".join(
+            "{} {:.2f}".format(name, r["player_speed_by_state"][name].get("p50", float("nan")))
+            for name, _, _ in SPEED_STATES) + " m/s",
     ]
     return lines

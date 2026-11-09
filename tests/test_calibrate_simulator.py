@@ -5,6 +5,7 @@ import os
 from dataclasses import replace
 
 import numpy as np
+import pytest
 
 from possession.simulate import DegradeParams
 
@@ -31,6 +32,15 @@ def test_the_fit_recovers_the_noise_that_made_the_target(capsys):
     target = calibrate.player_summary(halves, replace(DegradeParams(), player_noise_m=0.075))
     assert calibrate.fit_players(halves, target) == (0.075, 0.0)
     assert "best player_noise_m 0.075" in capsys.readouterr().out
+
+
+def test_the_ball_fit_weighs_the_players_speed_by_ball_state():
+    exact = {k: dict(v) if isinstance(v, dict) else v for k, v in calibrate.TARGET.items()}
+    assert calibrate.loss(exact) == 0.0
+    slower = dict(exact, players_gap_15_p50=1.3 * calibrate.TARGET["players_gap_15_p50"])
+    assert calibrate.loss(slower) == pytest.approx(calibrate.PLAYER_STATE_WEIGHT * np.log(1.3) ** 2)
+    got = calibrate.summary([standing_half()], DegradeParams())
+    assert set(got) == set(calibrate.TARGET)  # every target has its degraded side
 
 
 def test_without_a_target_the_fit_only_reports(capsys):

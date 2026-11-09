@@ -62,6 +62,19 @@ def test_position_noise_shows_in_the_players_speeds():
     assert 1.0 < noisy["player_speed_each"]["p50"] < 1.7
 
 
+def test_player_speeds_by_ball_state_follow_the_gaps():
+    half = make_half(n=3000)
+    still = np.arange(3000)[:, None] < 1000  # the players stand still for the first 40 s
+    half["x"] = np.where(still, half["x"][:1], half["x"]).astype(np.float32)
+    half["y"] = np.where(still, half["y"][:1], half["y"]).astype(np.float32)
+    half["ball_x"][:600] = np.nan  # and the ball is missing for the first 24 s of it
+    half["ball_y"][:600] = np.nan
+    by_state = profile([half], (105.0, 68.0))["player_speed_by_state"]
+    assert by_state["gap >15 s"]["p50"] < 0.01
+    assert by_state["seen"]["p50"] > 1.0
+    assert by_state["gap 5-15 s"]["n"] == 0
+
+
 def test_ball_missing_share_hits_the_target():
     # Gaps last about 12 s by default, so a long half keeps the share's granularity fine.
     out = degrade(make_half(n=80000), DegradeParams(ball_missing_share=0.4), seed=0)
