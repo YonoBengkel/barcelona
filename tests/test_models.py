@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from possession.features import NAMES
-from possession.models import DESIGN_NAMES, design, fit, load, probability, save, \
-    state_probabilities
+from possession.models import DESIGN_NAMES, design, fit, load, log_sigmoid, \
+    log_state_probabilities, probability, save, state_probabilities
 
 
 def synthetic(n=3000, seed=0):
@@ -39,6 +39,14 @@ def test_three_states_sum_to_one(tmp_path):
     save(models, str(path))
     p = state_probabilities(load(str(path)), X)
     assert p.shape == (len(X), 3) and np.allclose(p.sum(axis=1), 1.0)
+
+
+def test_log_evidence_matches_the_probabilities_and_stays_finite():
+    X, y = synthetic()
+    models = {"dead": fit(X, y), "team": fit(X, ~y)}
+    log_p = log_state_probabilities(models, X)
+    assert np.allclose(np.exp(log_p), state_probabilities(models, X), atol=1e-12)
+    assert np.isfinite(log_sigmoid(np.array([-800.0, 0.0, 800.0]))).all()
 
 
 def test_loading_refuses_a_model_fitted_on_other_features(tmp_path):

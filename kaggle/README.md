@@ -46,12 +46,12 @@ The zip is written even when a step fails, so the log always comes back.
 
 | Job | Where | Reads |
 |---|---|---|
-| `scripts/train_models.py` | Kaggle | IDSSE |
+| `scripts/train_models.py`: the models and the decoder | Kaggle | IDSSE |
 | `scripts/eval_external.py` | Kaggle | IDSSE |
 | `scripts/calibrate_simulator.py` | Kaggle | IDSSE |
 | `scripts/feature_report.py`, `simulate_report.py`, `idsse_label_report.py` | Kaggle | IDSSE |
 | `python -m pytest` | anywhere; step 3 of every Kaggle run | synthetic data |
-| `scripts/check_baselines.py`, `atd_profile.py`, `data_properties.py`, the submission script | the laptop only | the match data |
+| `scripts/make_submission.py`, `check_baselines.py`, `atd_profile.py`, `data_properties.py` | the laptop only | the match data |
 
 ## The token
 

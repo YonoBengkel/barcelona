@@ -87,6 +87,24 @@ def state_probabilities(models, X):
     return np.column_stack([(1 - dead) * home, (1 - dead) * (1 - home), dead])
 
 
+def log_sigmoid(z):
+    """log(1 / (1 + exp(-z))) for any z, without overflow."""
+    z = np.asarray(z, dtype=np.float64)
+    return np.minimum(z, 0.0) - np.log1p(np.exp(-np.abs(z)))
+
+
+def log_state_probabilities(models, X):
+    """(frames, 3) log-probabilities of H, A, D: the evidence possession.decode weighs.
+
+    Taken from the linear scores rather than as log(state_probabilities), so a frame the models
+    are sure about gets a large finite number instead of log(0).
+    """
+    dead, home = score(models["dead"], X), score(models["team"], X)
+    alive = log_sigmoid(-dead)
+    return np.column_stack([alive + log_sigmoid(home), alive + log_sigmoid(-home),
+                            log_sigmoid(dead)])
+
+
 def save(models, path):
     with open(path, "w", newline="\n") as handle:
         json.dump(models, handle, indent=1, sort_keys=True)

@@ -38,10 +38,16 @@ Jobs on public data, such as fitting the models, run in a Kaggle notebook throug
 
 ## Reproducing the submission
 
-The goal is one command that regenerates the submitted CSV byte for byte on CPU. It does not exist
-yet. Until then, this rebuilds the organisers' four baselines from the match data and confirms
-they match the committed ones, which checks the data bundle, the frame alignment and the
-environment in one go:
+One command regenerates the submission on CPU from the match data and the committed models:
+
+```bash
+python scripts/make_submission.py    # writes evaluation/results/possession_v1.csv
+```
+
+It applies `models/possession_v1.json`, which `scripts/train_models.py` fits on public data from
+other matches (see [kaggle/](kaggle/README.md)), and prints aggregates only, including the file's
+SHA-256 for comparing runs. To check the data bundle, the frame alignment and the environment in
+one go, this rebuilds the organisers' four baselines and confirms they match the committed ones:
 
 ```bash
 python scripts/check_baselines.py

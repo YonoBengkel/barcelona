@@ -33,6 +33,27 @@ def team_of_slots(meta_path):
     return np.array([HOME if team_id == team_ids[0] else AWAY for team_id in slots], dtype=np.int8)
 
 
+def metadata_attack_directions(meta_path):
+    """(home, away): the x direction each team attacks in the first half, as the metadata says.
+
+    +1 for 'left_to_right' (towards larger x), -1 for 'right_to_left' and 0 for anything else,
+    which is how kloppy reads the team parameter attack_direction_first_half. It serves only to
+    check, yes or no, the directions possession.features infers from the tracking; the values
+    themselves are never printed (AGENTS.md).
+    """
+    root = ET.parse(meta_path).getroot()
+    directions = []
+    for team in root.iter("Team"):
+        value = ""
+        for parameter in team.iter("ProviderParameter"):
+            if (parameter.findtext("Name") or "").strip() == "attack_direction_first_half":
+                value = (parameter.findtext("Value") or "").strip()
+        directions.append({"left_to_right": 1, "right_to_left": -1}.get(value, 0))
+    if len(directions) != 2:
+        raise ValueError("expected 2 teams in the ATD metadata, found {}".format(len(directions)))
+    return tuple(directions)
+
+
 def read_atd(meta_path, raw_path, n_frames, pitch):
     """{'ball_x', 'ball_y': (frames,), 'x', 'y': (frames, slots), 'team': (slots,)} in metres.
 

@@ -71,3 +71,5 @@ external/
 .pytest_cache/
 # What a Kaggle run returns; unzip it at the root, then delete it (kaggle/README.md).
 kaggle-results*.zip
+# Temporary files of the tests (pytest.ini).
+.pytest_tmp/

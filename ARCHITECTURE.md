@@ -2,9 +2,11 @@ Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader
 alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
 automatic-tracking quality), `practice` (the practice ground and its official scoring),
 `predictors` (the organisers' baseline on our arrays), `features` (33 per-frame features from
-positions alone) and `models` (the dead-ball and team logistic regressions, applied with numpy);
-the scripts under "How to run"; and the Kaggle runner in `kaggle/`. The decoder and the
-submission writer are still planned; rewrite this file from the code as they land.
+positions alone), `models` (the dead-ball and team logistic regressions, applied with numpy),
+`decode` (the three-state hidden Markov model and its Viterbi decoder) and `submission` (the
+CSV writer); the scripts under "How to run"; and the Kaggle runner in `kaggle/`. The decoder's
+costs are still to be chosen by a Kaggle run of `scripts/train_models.py`; rewrite this file from
+the code as later milestones land.
 
 # Architecture
 
@@ -22,14 +24,19 @@ per-frame arrays: ball xy or NaN · object xy · team
    ▼
 per-frame features ──► possession.models.design: log scale for skewed features, plus rolling
    │  means over 2.5-5 s for context
-   │  possession.models.state_probabilities: P(dead) and P(home | alive) from two logistic
+   │  possession.models.log_state_probabilities: P(dead) and P(home | alive) from two logistic
    │  regressions in models/possession_v1.json, summed column by column in a fixed order so the
    │  result does not depend on the CPU's BLAS
    ▼
-per-frame evidence: log-likelihood of H, A, D
-   │  possession.decode  (HMM / semi-Markov, Viterbi)
+per-frame evidence: log-probability of H, A, D
+   │  possession.decode: three-state hidden Markov model, Viterbi. A path pays team_switch for
+   │  H <-> A and dead_switch for each stoppage; dead_bias shifts the D evidence. The three
+   │  numbers sit in models/possession_v1.json beside the models
    ▼
-labels ──► possession.submission.write (LF line endings) ──► evaluation/validate_submission.py
+labels per graded half ──► possession.submission: X outside the graded halves, LF line endings
+   │  scripts/make_submission.py validates the file with possession_metrics.validate_submission
+   ▼
+evaluation/results/possession_v1.csv (gitignored; regenerated, never committed)
 
 external/idsse  (public IDSSE tracking and events of seven Bundesliga matches, gitignored)
    │  possession.external.read_positions, read_events
@@ -44,6 +51,12 @@ same per-frame arrays + raw labels from DFL's BallStatus and BallPossession
 possession.practice.cases ──► scripts/eval_external.py: runs every predictor on every degraded
 half, scores it with evaluation/possession_metrics.py (pooled over matches and per match), and
 prints the organisers' published full-match baseline scores beside ours as a fidelity check.
+   │
+   └─► scripts/train_models.py: holds out each match in turn. It fits the two models on the
+       other six and keeps their probabilities on the held-out match. It then scores every setting
+       of the decoder's grid on every match with possession.practice.counts, which pools exactly
+       as possession_metrics.evaluate does. Each match's setting is chosen on the other six (a
+       held-out score for the whole pipeline); the setting best on all seven is written out.
 Models and parameters are chosen here; the match itself never chooses anything.
 ```
 
@@ -74,7 +87,8 @@ manifest as one zip ([kaggle/README.md](kaggle/README.md)). Set the job as `COMM
 notebook cell:
 
 ```bash
-scripts/train_models.py        # fit the models leave-one-match-out, write models/possession_v1.json
+scripts/train_models.py        # fit the models and choose the decoder, match by match; write
+                               # models/possession_v1.json
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)
@@ -86,6 +100,7 @@ Jobs that read the match data run on the team's laptop only, and print aggregate
 
 ```bash
 pip install -r requirements.txt
+python scripts/make_submission.py    # the submission: evaluation/results/possession_v1.csv
 python scripts/check_baselines.py    # rebuilds the organisers' baselines and compares them
 python scripts/atd_profile.py        # profile of the match's tracking
 python scripts/data_properties.py    # structure of the data bundle
@@ -98,8 +113,9 @@ every file's size and digest. The first read of an IDSSE match parses its XML (a
 laptop) and caches the arrays under `external/idsse/cache/`; later reads take a fraction of a
 second.
 
-Planned: `scripts/make_submission.py` (match data to CSV, on the laptop) and the decoder's
-parameter search (on Kaggle).
+`scripts/make_submission.py` needs a `models/possession_v1.json` that carries a `decoder`
+section, written by a Kaggle run of `scripts/train_models.py`; without one it stops before it
+reads the match.
 
 ## Application layers
 
