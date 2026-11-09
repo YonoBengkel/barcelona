@@ -1,0 +1,42 @@
+commit 3b64f677674dfe1dc3eb88ea74eb6650ab859008
+job scripts/train_models.py
+4 CPUs, 1038 GB free in /tmp
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+..................................................                       [100%]
+50 passed in 17.00s
+
+$ /tmp/venv/bin/python scripts/train_models.py
+built rows in 349 s: dead 250672, team 276572
+C=0.01  dead: logloss 0.1521 AUC 0.9854 acc 0.9441 (no-ball rule 0.7024) | team: logloss 0.2725 AUC 0.9547 acc 0.8918; where a nearest player exists ours 0.8985 vs nearest 0.7454; without one ours 0.8699 (23% of live frames)
+C=0.1   dead: logloss 0.1512 AUC 0.9855 acc 0.9443 (no-ball rule 0.7024) | team: logloss 0.2701 AUC 0.9554 acc 0.8923; where a nearest player exists ours 0.8985 vs nearest 0.7454; without one ours 0.8723 (23% of live frames)
+C=1.0   dead: logloss 0.1503 AUC 0.9857 acc 0.9447 (no-ball rule 0.7024) | team: logloss 0.2700 AUC 0.9554 acc 0.8924; where a nearest player exists ours 0.8981 vs nearest 0.7454; without one ours 0.8736 (23% of live frames)
+chosen C: dead 1.0, team 1.0 (494 s)
+  decoder grid on J03WMX: 18 s so far
+  decoder grid on J03WN1: 35 s so far
+  decoder grid on J03WOH: 51 s so far
+  decoder grid on J03WOY: 69 s so far
+  decoder grid on J03WPY: 86 s so far
+  decoder grid on J03WQQ: 103 s so far
+  decoder grid on J03WR9: 120 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (136 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6299  mF1 0.8902   spellF1 0.6337  mF1 0.8904   spellF1 0.2606  mF1 0.6069
++/-1 s       spellF1 0.6090  mF1 0.8888   spellF1 0.6130  mF1 0.8891   spellF1 0.2609  mF1 0.6063
++/-2 s       spellF1 0.5672  mF1 0.8858   spellF1 0.5708  mF1 0.8861   spellF1 0.2562  mF1 0.6061
+held-out spellF1 per match: 0.574-0.631
+settings chosen per match: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x3; {'team_switch': 16, 'dead_switch': 64, 'dead_bias': 0.0} x3; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.0} x1
+chosen on all seven: {'team_switch': 16, 'dead_switch': 64, 'dead_bias': 0.0}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 22.9-27.4 per 10 min, mean 10.0-14.8 s
+wrote models/possession_v1.json (642 s in all)
