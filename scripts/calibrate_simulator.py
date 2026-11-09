@@ -47,13 +47,20 @@ SEARCH = {  # parameter: (low, high)
     "short_gap_share": (0.05, 0.3), "long_gap_median_s": (8.0, 18.0),
     "long_gap_sigma": (0.6, 1.2),
 }
-# The players' speed percentiles of the match's tracking, in m/s: {statistic: {percentile: value}}
-# for 'player_speed' and 'player_speed_each' of possession.profile. None until
-# scripts/atd_profile.py has printed them; --players then prints the degraded side alone.
-TARGET_PLAYERS = None
+# The players' speed percentiles of the match's tracking, in m/s, as scripts/atd_profile.py
+# printed them on 2026-11-09 (M11g): 'player_speed' is the mean over the tracked players, as the
+# models' speed_all, and 'player_speed_each' every player on his own. Aggregates only.
+TARGET_PLAYERS = {
+    "player_speed": {"p10": 0.69, "p25": 0.99, "p50": 1.49, "p75": 2.25, "p90": 2.99},
+    "player_speed_each": {"p10": 0.22, "p25": 0.77, "p50": 1.36, "p75": 2.41, "p90": 3.78},
+}
 PLAYER_STATISTICS = ("player_speed", "player_speed_each")
 PLAYER_PERCENTILES = ("p10", "p25", "p50", "p75", "p90")
 NOISE_GRID = (0.0, 0.025, 0.05, 0.075, 0.1, 0.15)
+# The ball's speed when seen, from the same profile. --players also prints how the ball's noise
+# sits against it, for information only: M11g changes the players' noise alone.
+TARGET_BALL_SPEED = {"p10": 1.01, "p25": 2.37, "p50": 5.08, "p75": 9.54, "p90": 14.31}
+BALL_NOISE_GRID = (0.0, 0.05, 0.1, 0.2)
 
 
 def summary(halves, params):
@@ -129,6 +136,27 @@ def fit_players(halves, target=None):
     return best
 
 
+def ball_noise_report(halves, target=TARGET_BALL_SPEED):
+    """The ball's speed when seen at each level of BALL_NOISE_GRID beside the match's, with the
+    same squared log-ratio loss. It chooses nothing; returns {level: loss}."""
+    print("\nball speed when seen, {} in m/s, and before a gap (p50), for information only".format(
+        "/".join(target)))
+    out = {}
+    for noise in BALL_NOISE_GRID:
+        degraded = [degrade(h, replace(DegradeParams(), ball_noise_m=noise), seed=i)
+                    for i, h in enumerate(halves)]
+        p = profile(degraded, DegradeParams().pitch)
+        seen = p["ball_speed_when_seen"]
+        out[noise] = player_loss({"ball": {k: seen.get(k, np.nan) for k in target}},
+                                 {"ball": target})
+        print("  ball noise {:.2f} m  {}  before a gap {:5.2f}  loss {:.3f}".format(
+            noise, " ".join("{:5.2f}".format(seen.get(k, np.nan)) for k in target),
+            p["ball_speed_before_gap"].get("p50", np.nan), out[noise]))
+    print("  match            {}  before a gap {:5.2f}".format(
+        " ".join("{:5.2f}".format(v) for v in target.values()), TARGET["speed_before_gap_p50"]))
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--samples", type=int, default=80)
@@ -148,6 +176,7 @@ def main():
     if args.players:
         print("{} halves of {}".format(len(halves), ", ".join(matches)))
         fit_players(halves, TARGET_PLAYERS)
+        ball_noise_report(halves)
         return 0
 
     rng = np.random.default_rng(args.seed)
