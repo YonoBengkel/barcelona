@@ -416,9 +416,10 @@ def main():
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
-    # On for the M11c run (the notebook's command has no flags); off again afterwards.
-    parser.add_argument("--oracle", action=argparse.BooleanOptionalAction, default=True,
-                        help="also print the perfect-evidence check (about 7 minutes)")
+    # Run once for M11c (runs/20261109T0856Z-train_models): the team model holds most of the
+    # missing score. Off by default; it adds about 9 minutes.
+    parser.add_argument("--oracle", action=argparse.BooleanOptionalAction, default=False,
+                        help="also print the perfect-evidence check (about 9 minutes)")
     args = parser.parse_args()
     matches = sorted(ex.MATCHES)
 
