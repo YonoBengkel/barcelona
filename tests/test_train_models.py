@@ -8,10 +8,13 @@ import importlib.util
 import io
 import itertools
 import os
+import time
+import types
 
 import numpy as np
 
 from possession.features import NAMES
+from possession.models import design_names, load
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location(
@@ -87,6 +90,60 @@ def test_oracle_evidence_turns_the_call_and_keeps_the_confidence():
 
     dead = np.exp(train_models.oracle_evidence(log_p, truth, "true dead"))[:, 2]
     assert (dead[truth == 2] >= 0.5).all() and (dead[truth != 2] <= 0.5).all()
+
+
+def synthetic_design_inputs(rng, matches):
+    """(train, held_out, labels per half) shaped as build() makes them, for made-up matches."""
+    width = len(design_names("v1"))
+    near, speed = NAMES.index("near_diff"), NAMES.index("speed_all")
+    train, held_out, truth = {}, {}, {}
+    for match in matches:
+        halves = [np.concatenate([np.full(rng.integers(40, 150), rng.choice(list("HAD")))
+                                  for _ in range(12)]) for _ in range(2)]
+        Xs = []
+        for labels in halves:
+            X = rng.normal(size=(len(labels), width)).astype(np.float32)
+            X[:, near] += np.where(labels == "H", -1.5, np.where(labels == "A", 1.5, 0.0))
+            X[:, speed] += np.where(labels == "D", -1.0, 1.0)
+            Xs.append(X)
+        labels, X = np.concatenate(halves), np.concatenate(Xs)
+        live = labels != "D"
+        mirrored = X[live].copy()
+        mirrored[:, near] *= -1
+        train[match] = {"dead": ([X], [labels == "D"]),
+                        "team": ([X[live], mirrored], [labels[live] == "H", labels[live] == "A"])}
+        held_out[match] = {"X": X, "labels": labels, "lengths": [len(h) for h in halves],
+                           "nearest": np.select([labels == "H", labels == "A"], [0, 1], -1)
+                           .astype(np.int8), "ball_known": rng.random(len(labels)) < 0.6}
+        truth[match] = halves
+    return train, held_out, truth
+
+
+def test_fit_design_writes_one_model_file_per_kind_of_team_model(tmp_path, monkeypatch, capsys):
+    rng = np.random.default_rng(5)
+    matches = ["M1", "M2", "M3"]
+    train, held_out, truth = synthetic_design_inputs(rng, matches)
+    axes = {"team_switch": (4, 16), "dead_switch": (16,), "dead_bias": (0.0,)}
+    monkeypatch.setattr(train_models, "labels_at",
+                        lambda match, tolerances: {t: truth[match] for t in tolerances})
+    monkeypatch.setattr(train_models, "DECODER_AXES", axes)
+    monkeypatch.setattr(train_models, "DECODER_GRID", tuple(itertools.product(*axes.values())))
+    monkeypatch.setattr(train_models, "GRID", (1.0,))
+    monkeypatch.setattr(train_models, "TREE_GRID", (
+        {"max_iter": 15, "max_leaf_nodes": 7, "learning_rate": 0.3, "min_samples_leaf": 5},))
+    args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False)
+
+    summaries = train_models.fit_design("v1", ["logistic", "trees"], train, held_out, matches,
+                                        args, time.time())
+
+    assert set(summaries) == {"v1", "v1+trees"}
+    for variant in summaries:
+        models = load(str(tmp_path / "possession_{}.json".format(variant)))
+        assert models["design"] == "v1" and "decoder" in models
+    assert load(str(tmp_path / "possession_v1+trees.json"))["team"]["kind"] == "trees"
+    train_models.compare(summaries, matches)
+    printed = capsys.readouterr().out
+    assert "team trees" in printed and "v1+trees against v1" in printed
 
 
 def test_a_design_is_adopted_only_by_the_rule():

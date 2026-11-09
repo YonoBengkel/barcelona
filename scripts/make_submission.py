@@ -83,7 +83,8 @@ def main():
     parts, agreement, states, calls, speeds = [], [], [], [], []
     for number, half in enumerate(halves(atd, half_video_blocks(GAME))):
         features = compute(half, pitch)[0]
-        X = design(features, models.get("design", "v1"))
+        # float32 as in training (scripts/train_models.py), so trees see the same values.
+        X = design(features, models.get("design", "v1")).astype(np.float32)
         labels = decode(log_state_probabilities(models, X), models["decoder"])
         parts.append((half["first_frame"], labels))
         states.append(diagnose.ball_states(features))

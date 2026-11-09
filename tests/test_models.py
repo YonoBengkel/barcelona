@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 
 from possession.features import NAMES
-from possession.models import DESIGN_NAMES, SHORT_CONTEXT, design, design_names, fit, load, \
-    log_sigmoid, log_state_probabilities, probability, save, state_probabilities
+from possession.models import DESIGN_NAMES, SHORT_CONTEXT, design, design_names, fit, \
+    fit_trees, load, log_sigmoid, log_state_probabilities, probability, save, score, \
+    state_probabilities
 
 
 def synthetic(n=3000, seed=0):
@@ -47,6 +48,28 @@ def test_log_evidence_matches_the_probabilities_and_stays_finite():
     log_p = log_state_probabilities(models, X)
     assert np.allclose(np.exp(log_p), state_probabilities(models, X), atol=1e-12)
     assert np.isfinite(log_sigmoid(np.array([-800.0, 0.0, 800.0]))).all()
+
+
+def test_tree_inference_matches_scikit_learn():
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    X, y = synthetic()  # with missing values, which the trees route on their own
+    params = {"max_iter": 30, "max_leaf_nodes": 15, "learning_rate": 0.2, "min_samples_leaf": 10}
+    model = fit_trees(X, y, **params)
+    reference = HistGradientBoostingClassifier(early_stopping=False, random_state=0,
+                                               **params).fit(X, y).decision_function(X)
+    assert np.allclose(score(model, X), reference, atol=1e-9)
+
+
+def test_a_tree_team_model_round_trips_and_gives_probabilities(tmp_path):
+    X, y = synthetic()
+    models = {"dead": fit(X, y), "team": fit_trees(X, ~y, max_iter=20)}
+    path = str(tmp_path / "trees.json")
+    save(models, path)
+    loaded = load(path)
+    assert loaded["team"]["kind"] == "trees"
+    assert np.allclose(probability(loaded["team"], X), probability(models["team"], X))
+    assert np.allclose(state_probabilities(loaded, X).sum(axis=1), 1.0)
 
 
 def test_the_second_design_adds_short_context_and_loads_by_name(tmp_path):

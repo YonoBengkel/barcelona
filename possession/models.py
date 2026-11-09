@@ -15,6 +15,11 @@ the submission has to come out byte for byte on the organisers' machine.
 The team model sees every half twice, once with home and away exchanged
 (possession.features.swapped), so it treats both sides alike instead of learning whichever side
 the practice matches happened to favour.
+
+M11d adds a second kind of model, gradient-boosted trees (fit_trees), for the team model above
+all: the perfect-evidence check showed the team call holds most of the missing score, and trees
+can use interactions a linear score cannot. They are kept as arrays and applied with numpy alone
+as well (score_trees).
 """
 
 import json
@@ -76,8 +81,66 @@ def fit(X, y, C=1.0, version="v1"):
             "intercept": float(model.intercept_[0])}
 
 
+def fit_trees(X, y, max_iter=200, max_leaf_nodes=31, learning_rate=0.1, min_samples_leaf=20,
+              version="v1"):
+    """A JSON-ready gradient-boosted tree model (M11d): scikit-learn fits, arrays are kept.
+
+    The trees are scikit-learn's own (HistGradientBoostingClassifier, no early stopping, a fixed
+    random state), copied node by node: feature, threshold, which branch a missing value takes,
+    children, leaf flag and value. score_trees applies them with numpy alone. NaN is left to the
+    trees, which learn where a missing value goes, so nothing is imputed.
+    """
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    params = {"max_iter": max_iter, "max_leaf_nodes": max_leaf_nodes,
+              "learning_rate": learning_rate, "min_samples_leaf": min_samples_leaf}
+    model = HistGradientBoostingClassifier(early_stopping=False, random_state=0, **params)
+    model.fit(X, y)
+    trees = []
+    for predictors in model._predictors:  # one tree per iteration for a binary target
+        nodes = predictors[0].nodes
+        trees.append({"feature": nodes["feature_idx"].tolist(),
+                      "threshold": nodes["num_threshold"].tolist(),
+                      "missing_left": nodes["missing_go_to_left"].tolist(),
+                      "left": nodes["left"].tolist(), "right": nodes["right"].tolist(),
+                      "leaf": nodes["is_leaf"].tolist(), "value": nodes["value"].tolist()})
+    return {"kind": "trees", "names": list(design_names(version)), "params": params,
+            "baseline": float(np.ravel(model._baseline_prediction)[0]), "trees": trees}
+
+
+def score_trees(model, X):
+    """Log-odds of a fit_trees model, numpy only.
+
+    Every row walks every tree with scikit-learn's rule (a missing value takes the node's
+    missing branch; otherwise x <= threshold goes left), and the leaf values are added tree by
+    tree in a fixed order, so the score is the same on any machine.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    z = np.full(len(X), model["baseline"], dtype=np.float64)
+    for tree in model["trees"]:
+        feature = np.asarray(tree["feature"], dtype=np.int64)
+        threshold = np.asarray(tree["threshold"], dtype=np.float64)
+        missing_left = np.asarray(tree["missing_left"], dtype=bool)
+        left = np.asarray(tree["left"], dtype=np.int64)
+        right = np.asarray(tree["right"], dtype=np.int64)
+        leaf = np.asarray(tree["leaf"], dtype=bool)
+        node = np.zeros(len(X), dtype=np.int64)
+        walking = np.flatnonzero(~leaf[node])
+        while len(walking):
+            at = node[walking]
+            x = X[walking, feature[at]]
+            go_left = np.where(np.isnan(x), missing_left[at], x <= threshold[at])
+            node[walking] = np.where(go_left, left[at], right[at])
+            walking = walking[~leaf[node[walking]]]
+        z += np.asarray(tree["value"], dtype=np.float64)[node]
+    return z
+
+
 def score(model, X):
-    """Linear score, summed column by column in a fixed order (no BLAS)."""
+    """Log-odds: a linear model's, summed column by column in a fixed order (no BLAS), or a tree
+    model's (score_trees)."""
+    if model.get("kind") == "trees":
+        return score_trees(model, X)
     z = np.full(len(X), model["intercept"], dtype=np.float64)
     for j, (mean, scale, coef) in enumerate(zip(model["mean"], model["scale"], model["coef"])):
         column = X[:, j]

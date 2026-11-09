@@ -2,9 +2,12 @@
 
 Each IDSSE match is held out in turn: the models are fitted on the other six (every half degraded
 with --seeds seeds, every --step-th frame kept) and judged on the held-out match, degraded with a
-seed no training copy used. For each model the C with the lowest pooled log loss wins. The
-baseline's own rules are scored beside them on the same frames: "no ball means dead" and "the
-nearest player's team has it".
+seed no training copy used. The dead-ball model is a logistic regression whose C is chosen by
+pooled held-out log loss. The team model comes in the kinds named by --team: a logistic
+regression (C chosen the same way), and gradient-boosted trees (M11d), whose settings in
+TREE_GRID are chosen the same way. Each kind becomes its own variant: 'v1' with the logistic
+team model, 'v1+trees' with the trees. The baseline's own rules are scored beside them on the
+same frames: "no ball means dead" and "the nearest player's team has it".
 
 The decoder (possession.decode) then turns those held-out probabilities into labels for every
 setting of a grid of its three costs, and each setting is scored on each match with the official
@@ -21,18 +24,19 @@ the held-out evidence with its team call, its dead-ball call or both turned to t
 model's own confidence, which bounds what fixing each part could gain.
 
 Last, the models are refitted on all seven matches and written, with the chosen decoder, to
-models/possession_<design>.json.
+models/possession_<variant>.json.
 
 All of this runs for every design of the features named (possession.models.DESIGNS) on the same
-degraded halves. Each design after v1 is then set against v1 match by match, and the adoption
-rule fixed before the run is applied: a design replaces v1 only if its held-out spellF1 at
-+/-1 s is at least 0.01 higher, it is better on at least 5 of the 7 matches, it loses nothing at
-+/-0.5 s or +/-2 s, and its macroF1 falls by at most 0.005.
+degraded halves. Each variant other than v1 is then set against v1 match by match, and the
+adoption rule fixed before the run is applied: a variant replaces v1 only if its held-out
+spellF1 at +/-1 s is at least 0.01 higher, it is better on at least 5 of the 7 matches, it loses
+nothing at +/-0.5 s or +/-2 s, and its macroF1 falls by at most 0.005.
 
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.
 
-    python scripts/train_models.py [--designs v1 [v2 ...]] [--seeds 2] [--step 8] [--out-dir models]
+    python scripts/train_models.py [--designs v1 [v2 ...]] [--team logistic [trees]]
+                                   [--seeds 2] [--step 8] [--out-dir models] [--oracle]
 """
 
 import argparse
@@ -54,13 +58,18 @@ from possession import external as ex  # noqa: E402
 from possession import practice  # noqa: E402
 from possession.decode import viterbi  # noqa: E402
 from possession.features import FPS, HOME, compute, swapped  # noqa: E402
-from possession.models import (DESIGNS, design, design_names, fit,  # noqa: E402
+from possession.models import (DESIGNS, design, design_names, fit, fit_trees,  # noqa: E402
                                log_state_probabilities, probability, save)
 from possession.predictors import NOBODY, nearest_team, smooth  # noqa: E402
 
 pm = practice.pm
 PITCH = (105.0, 68.0)
 GRID = (0.01, 0.1, 1.0)
+TEAM_KINDS = ("logistic", "trees")
+# M11d: gradient-boosted team models, chosen among by held-out log loss like C.
+TREE_GRID = ({"max_iter": 200, "max_leaf_nodes": 31, "learning_rate": 0.1, "min_samples_leaf": 20},
+             {"max_iter": 300, "max_leaf_nodes": 63, "learning_rate": 0.05,
+              "min_samples_leaf": 100})
 EVAL_SEED = 99
 TOLERANCES = (0.5, 1.0, 2.0)
 BASELINE_WINDOW = 50
@@ -121,44 +130,56 @@ def stack(train, matches, model):
     return X, y
 
 
-def evaluate(train, held_out, matches, C, version="v1"):
-    """Pooled held-out predictions over all folds for one C, and each fold's models."""
-    pooled = {"dead_p": [], "dead_y": [], "team_p": [], "team_y": [], "nearest": [],
-              "known": [], "no_ball": []}
-    folds = {}
+def lomo(train, held_out, matches, model, fitter):
+    """Each match held out in turn: fitter on the other six matches' rows of model ('dead' or
+    'team'). Returns ({match: fitted}, pooled held-out probabilities, their labels); the team
+    model is judged on live frames only."""
+    folds, p, y = {}, [], []
     for match in matches:
         others = [m for m in matches if m != match]
-        dead_model = fit(*stack(train, others, "dead"), C=C, version=version)
-        team_model = fit(*stack(train, others, "team"), C=C, version=version)
-        folds[match] = {"dead": dead_model, "team": team_model}
+        folds[match] = fitter(*stack(train, others, model))
         part = held_out[match]
-        live = part["labels"] != "D"
-        pooled["dead_p"].append(probability(dead_model, part["X"]))
-        pooled["dead_y"].append(part["labels"] == "D")
-        pooled["no_ball"].append(~part["ball_known"])
-        pooled["team_p"].append(probability(team_model, part["X"][live]))
-        pooled["team_y"].append(part["labels"][live] == "H")
-        pooled["nearest"].append(part["nearest"][live])
-        pooled["known"].append(part["ball_known"][live])
-    return {key: np.concatenate(value) for key, value in pooled.items()}, folds
+        rows = slice(None) if model == "dead" else part["labels"] != "D"
+        p.append(probability(folds[match], part["X"][rows]))
+        y.append(part["labels"][rows] == ("D" if model == "dead" else "H"))
+    return folds, np.concatenate(p), np.concatenate(y)
 
 
-def report(C, r):
-    dead_acc = np.mean((r["dead_p"] > 0.5) == r["dead_y"])
-    rule_acc = np.mean(r["no_ball"] == r["dead_y"])
-    team_acc = np.mean((r["team_p"] > 0.5) == r["team_y"])
-    has_nearest = r["nearest"] != NOBODY
-    nearest_acc = np.mean((r["nearest"][has_nearest] == HOME) == r["team_y"][has_nearest])
-    ours_same = np.mean((r["team_p"][has_nearest] > 0.5) == r["team_y"][has_nearest])
-    ours_blind = np.mean((r["team_p"][~has_nearest] > 0.5) == r["team_y"][~has_nearest])
-    print("C={:<5} dead: logloss {:.4f} AUC {:.4f} acc {:.4f} (no-ball rule {:.4f}) | "
-          "team: logloss {:.4f} AUC {:.4f} acc {:.4f}; where a nearest player exists ours {:.4f} "
-          "vs nearest {:.4f}; without one ours {:.4f} ({:.0%} of live frames)".format(
-              C, log_loss(r["dead_y"], r["dead_p"]), roc_auc_score(r["dead_y"], r["dead_p"]),
-              dead_acc, rule_acc, log_loss(r["team_y"], r["team_p"]),
-              roc_auc_score(r["team_y"], r["team_p"]), team_acc, ours_same, nearest_acc,
-              ours_blind, np.mean(~has_nearest)))
-    return log_loss(r["dead_y"], r["dead_p"]), log_loss(r["team_y"], r["team_p"])
+def rules(held_out, matches):
+    """The baseline's own rules on the held-out frames, to score the models against."""
+    live = [held_out[m]["labels"] != "D" for m in matches]
+    dead_y = np.concatenate([held_out[m]["labels"] == "D" for m in matches])
+    no_ball = np.concatenate([~held_out[m]["ball_known"] for m in matches])
+    return {"no_ball_acc": float(np.mean(no_ball == dead_y)),
+            "nearest": np.concatenate([held_out[m]["nearest"][l] for m, l in zip(matches, live)])}
+
+
+def report_dead(label, p, y, rule):
+    print("dead {:<34} logloss {:.4f} AUC {:.4f} acc {:.4f} (no-ball rule {:.4f})".format(
+        label, log_loss(y, p), roc_auc_score(y, p), np.mean((p > 0.5) == y), rule["no_ball_acc"]))
+    return log_loss(y, p)
+
+
+def report_team(label, p, y, rule):
+    has_nearest = rule["nearest"] != NOBODY
+    print("team {:<34} logloss {:.4f} AUC {:.4f} acc {:.4f}; where a nearest player exists ours "
+          "{:.4f} vs nearest {:.4f}; without one ours {:.4f} ({:.0%} of live frames)".format(
+              label, log_loss(y, p), roc_auc_score(y, p), np.mean((p > 0.5) == y),
+              np.mean((p[has_nearest] > 0.5) == y[has_nearest]),
+              np.mean((rule["nearest"][has_nearest] == HOME) == y[has_nearest]),
+              np.mean((p[~has_nearest] > 0.5) == y[~has_nearest]), np.mean(~has_nearest)))
+    return log_loss(y, p)
+
+
+def team_candidates(kind, version):
+    """[(label, fitter)]: the team models of one kind, chosen among by held-out log loss."""
+    if kind == "logistic":
+        return [("logistic C={:g}".format(C),
+                 lambda X, y, C=C: fit(X, y, C=C, version=version)) for C in GRID]
+    return [("trees {max_iter}x{max_leaf_nodes} lr {learning_rate:g} leaf>={min_samples_leaf}"
+             .format(**params), lambda X, y, params=params: fit_trees(X, y, version=version,
+                                                                      **params))
+            for params in TREE_GRID]
 
 
 def decoded(log_ps, settings):
@@ -349,47 +370,67 @@ def oracle_headroom(held_out, oof, matches):
             time.time() - start))
 
 
-def fit_design(version, train, held_out, matches, args, start):
-    """Models, decoder and error report for one design; writes models/possession_<version>.json.
+def variant_name(version, kind):
+    """'v1' for the logistic team model, 'v1+trees' for the gradient-boosted one."""
+    return version if kind == "logistic" else "{}+{}".format(version, kind)
 
-    held_out carries this design's feature matrix under 'X'. Returns fit_decoder's summary.
+
+def fit_design(version, team_kinds, train, held_out, matches, args, start):
+    """One design: the dead-ball model once, then for each kind of team model its decoder, error
+    report and file models/possession_<variant>.json.
+
+    held_out carries this design's feature matrix under 'X'. Returns {variant: fit_decoder's
+    summary}.
     """
     print("\n===== design {}: {} columns =====".format(version, len(design_names(version))))
-    losses, folds = {}, {}
+    rule = rules(held_out, matches)
+    dead = {}
     for C in GRID:
-        result, folds[C] = evaluate(train, held_out, matches, C, version)
-        losses[C] = report(C, result)
-    best_dead = min(GRID, key=lambda c: losses[c][0])
-    best_team = min(GRID, key=lambda c: losses[c][1])
-    print("chosen C: dead {}, team {} ({:.0f} s)".format(best_dead, best_team,
-                                                          time.time() - start))
+        folds, p, y = lomo(train, held_out, matches, "dead",
+                           lambda X, y, C=C: fit(X, y, C=C, version=version))
+        dead[C] = (report_dead("logistic C={:g}".format(C), p, y, rule), folds)
+    best_dead = min(GRID, key=lambda c: dead[c][0])
+    dead_model = fit(*stack(train, matches, "dead"), C=best_dead, version=version)
+    print("chosen dead C={:g} ({:.0f} s)".format(best_dead, time.time() - start))
 
-    oof = {m: [log_state_probabilities({"dead": folds[best_dead][m]["dead"],
-                                        "team": folds[best_team][m]["team"]}, X)
-               for X in halves_of(held_out[m], "X")] for m in matches}
-    decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof, matches)
-    report_errors(held_out, held_out_codes, matches)
-    if args.oracle:
-        oracle_headroom(held_out, oof, matches)
+    summaries = {}
+    for kind in team_kinds:
+        team = {}
+        for label, fitter in team_candidates(kind, version):
+            folds, p, y = lomo(train, held_out, matches, "team", fitter)
+            team[label] = (report_team(label, p, y, rule), folds, fitter)
+        chosen = min(team, key=lambda label: team[label][0])
+        variant = variant_name(version, kind)
+        print("\n----- {}: team {} ({:.0f} s) -----".format(variant, chosen, time.time() - start))
 
-    models = {"design": version,
-              "dead": fit(*stack(train, matches, "dead"), C=best_dead, version=version),
-              "team": fit(*stack(train, matches, "team"), C=best_team, version=version),
-              "decoder": decoder,
-              "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
-                            "label_tolerance_s": 1.0, "pitch": list(PITCH),
-                            "scikit_learn": sklearn_version,
-                            "decoder_grid": {k: list(v) for k, v in DECODER_AXES.items()},
-                            "practice_range": practice_range}}
-    out = os.path.join(args.out_dir, "possession_{}.json".format(version))
-    os.makedirs(args.out_dir, exist_ok=True)
-    save(models, out)
-    print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT), time.time() - start))
-    return summary
+        oof = {m: [log_state_probabilities({"dead": dead[best_dead][1][m],
+                                            "team": team[chosen][1][m]}, X)
+                   for X in halves_of(held_out[m], "X")] for m in matches}
+        decoder, practice_range, held_out_codes, summary = fit_decoder(held_out, oof, matches)
+        report_errors(held_out, held_out_codes, matches)
+        if args.oracle:
+            oracle_headroom(held_out, oof, matches)
+
+        models = {"design": version, "dead": dead_model,
+                  "team": team[chosen][2](*stack(train, matches, "team")),
+                  "decoder": decoder,
+                  "fitted_on": {"matches": matches, "seeds": args.seeds, "step": args.step,
+                                "label_tolerance_s": 1.0, "pitch": list(PITCH),
+                                "scikit_learn": sklearn_version, "team_model": chosen,
+                                "decoder_grid": {k: list(v) for k, v in DECODER_AXES.items()},
+                                "practice_range": practice_range}}
+        out = os.path.join(args.out_dir, "possession_{}.json".format(variant))
+        os.makedirs(args.out_dir, exist_ok=True)
+        save(models, out)
+        print("wrote {} ({:.0f} s so far)".format(os.path.relpath(out, ROOT),
+                                                  time.time() - start))
+        summaries[variant] = summary
+    return summaries
 
 
 def compare(summaries, matches):
-    """Each design against v1, match by match, with the adoption rule fixed before the run."""
+    """Each variant (a design, a kind of team model) against v1, match by match, with the
+    adoption rule fixed before the run."""
     reference = summaries["v1"]
     for version, summary in summaries.items():
         if version == "v1":
@@ -413,6 +454,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
     parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
+    # M11d sets the gradient-boosted team model against the logistic one on the same frames.
+    parser.add_argument("--team", nargs="+", default=["logistic", "trees"], choices=TEAM_KINDS)
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
@@ -433,7 +476,8 @@ def main():
     summaries = {}
     for version in args.designs:
         view = {m: dict(part, X=part["X"][version]) for m, part in held_out.items()}
-        summaries[version] = fit_design(version, train[version], view, matches, args, start)
+        summaries.update(fit_design(version, args.team, train[version], view, matches, args,
+                                    start))
     if "v1" in summaries and len(summaries) > 1:
         compare(summaries, matches)
     print("\ndone in {:.0f} s".format(time.time() - start))

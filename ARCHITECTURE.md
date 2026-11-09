@@ -2,7 +2,8 @@ Status: plan. Built so far: in `possession/`, `safety`, `external` (IDSSE reader
 alignment), `atd` (the match's tracking reader), `profile` and `simulate` (IDSSE degraded to
 automatic-tracking quality), `practice` (the practice ground and its official scoring),
 `predictors` (the organisers' baseline on our arrays), `features` (33 per-frame features from
-positions alone), `models` (the dead-ball and team logistic regressions, applied with numpy),
+positions alone), `models` (logistic regressions and gradient-boosted trees for the dead-ball and
+team calls, both applied with numpy alone),
 `decode` (the three-state hidden Markov model and its Viterbi decoder), `submission` (the CSV
 writer) and `diagnose` (errors by ball state and by possession); the scripts under "How to run";
 and the Kaggle runner in `kaggle/`. Rewrite this file from the code as later milestones land.
