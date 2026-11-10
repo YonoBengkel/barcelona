@@ -80,6 +80,10 @@ practice ground at ±1 s labels.
   the rule (+0.006).
 - **One-second context features** beside the 2.5-5 s ones, aimed at short possessions: -0.002,
   better on 3 of 7 matches. Dropped.
+- **Last-touch features**: which side last had a player within 1.5 m of the ball, how long ago,
+  and how many touches in a row it made, a completed pass being the challenge's sign of control.
+  They improved the team model frame by frame (log loss 0.2526 to 0.2466) but not the
+  possessions: +0.0008, better on 3 of 7 matches. Kept in the code as design v3, not used.
 - **A wider decoder grid** (`dead_bias` up to 3.0): the search chose the same setting.
 - **0.15 m of player position noise in the simulator.** Once set against the match's player speeds
   it came out at none, which changed the practice ground itself (Section 3).
@@ -205,7 +209,6 @@ check we can make falls where the practice ground predicts:
 - **With more time we would:**
   - model where the match's tracker loses the ball, for instance in flight before it goes out, so
     that gaps can sit at stoppages without starting near a line too often;
-  - add a "last touch" feature for passes in flight;
   - add the referee's whistle from audio and the Smart Tagging as evidence, once there is a fair
     way to weigh them without labels on this match;
   - try a semi-Markov decoder that models how long possessions last.
