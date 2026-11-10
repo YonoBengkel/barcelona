@@ -56,7 +56,9 @@ class DegradeParams:
     slow_weight: float = 0.405       # ball slower than slow_mps
     crowd_radius_m: float = 2.0
     crowd_weight: float = 0.716      # per player within crowd_radius_m of the ball
-    dead_weight: float = 0.0         # ball out of play (IDSSE's own label); the fit chose none
+    # Ball out of play (IDSSE's own label). The fit chose none, and so did M11h's scan against the
+    # players' speeds by ball state: a gap's length ignores the stoppage, so long gaps outlast it.
+    dead_weight: float = 0.0
     # Chance that a stretch with the ball outside the lines stays visible.
     outside_visible: float = 0.187
     pitch: tuple = (105.0, 68.0)

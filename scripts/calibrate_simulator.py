@@ -25,6 +25,14 @@ prints the loss beside the statistics dead_weight should move, and the share of 
 frames among the frames hidden in gaps over 15 s. The search above moves every parameter at once,
 which M11h's first run found hardly explores one of them on its own (loss 4.698 to 4.670).
 
+What M11h found (runs/20261110T0157Z and 20261110T0210Z-calibrate_simulator): the loss is lowest
+with dead_weight at none, and rises to 16.3 at 4. Gaps placed at stoppages do bring the players'
+speed in 5-15 s gaps down to the match's, but a gap's length is drawn whatever play does, so a long
+gap outlasts its stoppage and the share of dead frames in gaps over 15 s stops near 79%; the
+players there stay at 1.15 m/s against the match's 0.91. Meanwhile far more gaps start near a line
+than in the match. Matching it would take gaps that last until the restart, which this simulator
+does not model. The defaults were left as they were.
+
     python scripts/calibrate_simulator.py [--samples 80] [--local 120] [MATCH_ID ...]
     python scripts/calibrate_simulator.py --players [MATCH_ID ...]
     python scripts/calibrate_simulator.py --dead-scan [MATCH_ID ...]
