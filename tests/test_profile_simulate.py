@@ -1,11 +1,13 @@
 """Profile statistics and the degradation simulator on synthetic halves."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from possession.features import NAMES, compute
 from possession.profile import gap_starts, player_speeds, profile, run_lengths
-from possession.simulate import DegradeParams, degrade
+from possession.simulate import DegradeParams, degrade, frames_until_restart
 
 
 def make_half(n=20000, players=22, seed=1, period=3000):
@@ -73,6 +75,22 @@ def test_player_speeds_by_ball_state_follow_the_gaps():
     assert by_state["gap >15 s"]["p50"] < 0.01
     assert by_state["seen"]["p50"] > 1.0
     assert by_state["gap 5-15 s"]["n"] == 0
+
+
+def test_frames_until_restart_counts_to_the_next_frame_in_play():
+    dead = np.array([0, 1, 1, 0, 1, 1, 1], dtype=bool)
+    assert frames_until_restart(dead).tolist() == [0, 2, 1, 0, 3, 2, 1]
+
+
+def test_gaps_that_last_until_the_restart_stay_in_the_stoppage():
+    half = make_half(n=40000)
+    half["alive"] = np.arange(40000) % 4000 >= 2000  # 80 s stopped, then 80 s of play, in turn
+    params = DegradeParams(dead_weight=4.0)
+    drawn = np.isnan(degrade(half, params, seed=0)["ball_x"])
+    to_restart = np.isnan(degrade(half, replace(params, until_restart=1.0), seed=0)["ball_x"])
+    dead = ~half["alive"]
+    assert dead[to_restart].mean() > dead[drawn].mean()
+    assert to_restart.mean() == pytest.approx(0.407, abs=0.03)  # the share still hits the target
 
 
 def test_ball_missing_share_hits_the_target():

@@ -59,6 +59,9 @@ class DegradeParams:
     # Ball out of play (IDSSE's own label). The fit chose none, and so did M11h's scan against the
     # players' speeds by ball state: a gap's length ignores the stoppage, so long gaps outlast it.
     dead_weight: float = 0.0
+    # Chance that a gap opening while the ball is out of play lasts until play restarts instead of
+    # a drawn length (M11h). At none the random draws are exactly those of the simulator before.
+    until_restart: float = 0.0
     # Chance that a stretch with the ball outside the lines stays visible.
     outside_visible: float = 0.187
     pitch: tuple = (105.0, 68.0)
@@ -164,11 +167,30 @@ def gap_lengths(n, params, rng):
     return np.maximum(1, np.round(median * np.exp(sigma * rng.standard_normal(n))))
 
 
+def frames_until_restart(dead):
+    """(frames,) frames from each frame to the next one in play: 0 where the ball is in play, and
+    up to the half's end where play does not restart."""
+    n = len(dead)
+    index = np.arange(n)
+    following = np.minimum.accumulate(np.where(dead, n, index)[::-1])[::-1]
+    return following - index
+
+
 def hide_ball(half, params, rng):
-    """Boolean (frames,) mask of the frames on which the degraded tracking has no ball."""
+    """Boolean (frames,) mask of the frames on which the degraded tracking has no ball.
+
+    A gap that opens while the ball is out of play lasts until the restart with chance
+    until_restart; any other gap lasts a drawn length. The draws come in the same order as before
+    until_restart existed, so at none the mask is the same.
+    """
     n = len(half["ball_x"])
-    return _gap_mask(ball_risk(half, params), params.ball_missing_share,
-                     gap_lengths(n, params, rng), rng, base=_outside_mask(half, params, rng))
+    lengths = gap_lengths(n, params, rng)
+    if params.until_restart > 0 and "alive" in half:
+        dead = ~np.asarray(half["alive"], dtype=bool)
+        take = dead & (rng.random(n) < params.until_restart)
+        lengths = np.where(take, np.maximum(frames_until_restart(dead), 1), lengths)
+    return _gap_mask(ball_risk(half, params), params.ball_missing_share, lengths, rng,
+                     base=_outside_mask(half, params, rng))
 
 
 def degrade(half, params=DegradeParams(), seed=0):

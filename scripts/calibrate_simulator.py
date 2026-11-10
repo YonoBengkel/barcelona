@@ -31,11 +31,18 @@ speed in 5-15 s gaps down to the match's, but a gap's length is drawn whatever p
 gap outlasts its stoppage and the share of dead frames in gaps over 15 s stops near 79%; the
 players there stay at 1.15 m/s against the match's 0.91. Meanwhile far more gaps start near a line
 than in the match. Matching it would take gaps that last until the restart, which this simulator
-does not model. The defaults were left as they were.
+did not model then. The defaults were left as they were.
+
+--restart-scan tries that: DegradeParams.until_restart is the chance that a gap opening while the
+ball is out of play lasts until the restart. It scans dead_weight against until_restart, every
+other parameter at its default. The rule, fixed before the run: the cell with the lowest loss
+becomes the default only if its loss is below the current defaults' (4.698); otherwise nothing
+changes.
 
     python scripts/calibrate_simulator.py [--samples 80] [--local 120] [MATCH_ID ...]
     python scripts/calibrate_simulator.py --players [MATCH_ID ...]
     python scripts/calibrate_simulator.py --dead-scan [MATCH_ID ...]
+    python scripts/calibrate_simulator.py --restart-scan [MATCH_ID ...]
 """
 
 import argparse
@@ -71,6 +78,8 @@ PLAYER_STATES = {"players_seen_p50": "seen", "players_gap_5_15_p50": "gap 5-15 s
                  "players_gap_15_p50": "gap >15 s"}
 PLAYER_STATE_WEIGHT = 10.0
 DEAD_WEIGHTS = (0.0, 0.5, 1.0, 2.0, 3.0, 4.0)
+RESTART_GRID = {"dead_weight": (0.0, 0.5, 1.0, 2.0, 4.0),
+                "until_restart": (0.0, 0.25, 0.5, 0.75, 1.0)}
 SEARCH = {  # parameter: (low, high)
     "line_weight": (0.0, 3.0), "box_weight": (0.0, 3.0), "slow_weight": (0.0, 3.0),
     "crowd_weight": (0.0, 0.8), "dead_weight": (0.0, 4.0), "outside_visible": (0.0, 0.5),
@@ -177,6 +186,45 @@ def dead_scan(halves):
     return best
 
 
+def restart_scan(halves):
+    """(((dead_weight, until_restart), loss) of the best cell of RESTART_GRID, the defaults'
+    loss), every other parameter at its default, printing every cell and the verdict of the rule
+    in the module's docstring."""
+    default = loss(summary(halves, DegradeParams()))
+    print("dead_weight against until_restart, every other parameter at its default (defaults' "
+          "loss {:.3f})".format(default))
+    print("  {:>4} {:>7} {:>7}  players' median m/s: seen, 5-15 s, >15 s   gap p50, p90 s   "
+          "ball before a gap   near a line before   dead in gaps >15 s".format(
+              "dead", "restart", "loss"))
+    best = (None, float("inf"))
+    for weight in RESTART_GRID["dead_weight"]:
+        for share in RESTART_GRID["until_restart"]:
+            params = replace(DegradeParams(), dead_weight=weight, until_restart=share)
+            degraded = degraded_halves(halves, params)
+            got = summary_of(degraded, params)
+            value = loss(got)
+            print("  {:>4.1f} {:>7.2f} {:>7.3f}  {:>17.2f} {:>6.2f} {:>6.2f}   {:>7.2f} {:>6.2f}   "
+                  "{:>12.2f} m/s   {:>18.3f}   {:>18.1%}".format(
+                      weight, share, value, got["players_seen_p50"],
+                      got["players_gap_5_15_p50"], got["players_gap_15_p50"],
+                      got["gap_s"]["p50"], got["gap_s"]["p90"], got["speed_before_gap_p50"],
+                      got["near_line_before"], long_gap_dead_share(halves, degraded)))
+            if value < best[1]:
+                best = ((weight, share), value)
+    print("  {:>4} {:>7} {:>7}  {:>17.2f} {:>6.2f} {:>6.2f}   {:>7.2f} {:>6.2f}   {:>12.2f} m/s   "
+          "{:>18.3f}".format("match", "", "", TARGET["players_seen_p50"],
+                             TARGET["players_gap_5_15_p50"], TARGET["players_gap_15_p50"],
+                             TARGET["gap_s"]["p50"], TARGET["gap_s"]["p90"],
+                             TARGET["speed_before_gap_p50"], TARGET["near_line_before"]))
+    (weight, share), value = best
+    if value < default:
+        print("best: dead_weight {:.1f}, until_restart {:.2f}, loss {:.3f} against the defaults' "
+              "{:.3f}: copy them into DegradeParams' defaults".format(weight, share, value, default))
+    else:
+        print("no cell beats the defaults' loss {:.3f}: keep the defaults".format(default))
+    return best, default
+
+
 def player_summary(halves, params):
     """{statistic: {percentile: m/s}} of the players' speeds on the halves degraded with params."""
     degraded = [degrade(h, params, seed=i) for i, h in enumerate(halves)]
@@ -246,6 +294,8 @@ def main():
                         help="fit the players' position noise to TARGET_PLAYERS instead (M11g)")
     parser.add_argument("--dead-scan", action="store_true",
                         help="move dead_weight alone, the rest at the defaults (M11h)")
+    parser.add_argument("--restart-scan", action="store_true",
+                        help="scan dead_weight against until_restart, the rest at the defaults")
     parser.add_argument("matches", nargs="*")
     args = parser.parse_args()
     matches = args.matches or (sorted(ex.MATCHES) if args.players
@@ -263,6 +313,10 @@ def main():
     if args.dead_scan:
         print("{} halves of {}".format(len(halves), ", ".join(matches)))
         dead_scan(halves)
+        return 0
+    if args.restart_scan:
+        print("{} halves of {}".format(len(halves), ", ".join(matches)))
+        restart_scan(halves)
         return 0
 
     rng = np.random.default_rng(args.seed)

@@ -54,6 +54,18 @@ def test_dead_weight_puts_the_long_gaps_at_stoppages():
     assert 0.0 <= shares[0] < shares[1] <= 1.0
 
 
+def test_the_restart_scan_keeps_the_defaults_unless_a_cell_beats_them(monkeypatch, capsys):
+    half = standing_half(n=20000)
+    half["alive"] = np.arange(20000) % 4000 >= 2000
+    monkeypatch.setattr(calibrate, "RESTART_GRID",
+                        {"dead_weight": (0.0, 2.0), "until_restart": (0.0, 1.0)})
+    (cell, value), default = calibrate.restart_scan([half])
+    assert value <= default  # the defaults are a cell of the grid
+    printed = capsys.readouterr().out
+    assert "dead_weight against until_restart" in printed
+    assert ("copy them into DegradeParams' defaults" in printed) == (value < default)
+
+
 def test_without_a_target_the_fit_only_reports(capsys):
     best, value = calibrate.fit_players([standing_half(n=1000)])
     assert best is None and value == float("inf")

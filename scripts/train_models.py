@@ -120,8 +120,9 @@ PLAYER_SPEEDS = ("speed_all", "speed_home", "speed_away")
 # against the players' speeds by ball state. So the old ground is M11g's, every parameter that
 # M11h's search moves written out.
 OLD_GROUND = replace(DegradeParams(), player_noise_m=0.0, line_weight=0.038, box_weight=0.801,
-                     slow_weight=0.405, crowd_weight=0.716, dead_weight=0.0, outside_visible=0.187,
-                     short_gap_share=0.167, long_gap_median_s=8.0, long_gap_sigma=0.630)
+                     slow_weight=0.405, crowd_weight=0.716, dead_weight=0.0, until_restart=0.0,
+                     outside_visible=0.187, short_gap_share=0.167, long_gap_median_s=8.0,
+                     long_gap_sigma=0.630)
 OLD_GROUND_NOTE = "M11g's, its ball gaps placed without regard to stoppages"
 OLD_SUFFIX = " (old ground)"
 
