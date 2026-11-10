@@ -234,6 +234,10 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
   with the organisers' own checks, and prints aggregates and the file's SHA-256. The model was
   frozen on 10 November 2026; it gives
   `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
+- On the same day, a fresh clone of `main` reproduced that digest on a Windows 11 laptop, with
+  Python 3.12.4 and a new virtual environment from `requirements.txt`, in 43 seconds. The bundle
+  was read in place through `MTAH_DATA_DIR`, the starter kit's own setting, instead of being
+  copied into `data/`.
 
 **Refitting the model** uses public data only and is not needed to reproduce the file:
 
