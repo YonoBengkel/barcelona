@@ -1,10 +1,12 @@
 # Ball possession from automatic tracking: technical document
 
-More than a Hack 2027, Phase 1. For every frame of the tactical video of FC Barcelona vs Athletic
-Club, the system says whether the home side has the ball (`H`), the away side has it (`A`) or the
-ball is dead (`D`), from the provided automatic tracking alone. This document covers what was
-built and why, the assets and data used, the possession rules, the limitations and how to
-reproduce the file. The code is in this repository; [ARCHITECTURE.md](ARCHITECTURE.md) maps it.
+Team BasahKuyups, More than a Hack 2027, Phase 1. For every frame of the tactical video of FC
+Barcelona vs Athletic Club, the system says whether the home side has the ball (`H`), the away
+side has it (`A`) or the ball is dead (`D`), from the provided automatic tracking alone. This
+document covers what was built and why, the assets and data used, the possession rules, the
+limitations and how to reproduce the file. The code is in the repository
+[github.com/YonoBengkel/barcelona](https://github.com/YonoBengkel/barcelona), where
+[ARCHITECTURE.md](ARCHITECTURE.md) maps it.
 
 ## 1. Approach
 
@@ -115,8 +117,8 @@ possession (Section 4), giving 2,201 possessions at ±1 s. **Nothing comes from 
 The parameters were fitted to label-free statistics of the match's own tracking, printed by
 `scripts/atd_profile.py` as aggregates only:
 - gap and seen-run lengths, where gaps start, crowding, and ball speeds (search loss 16.1 → 3.1);
-- since M11g, the players' speed percentiles. Degraded IDSSE matches them best with no added
-  player noise (loss 0.302, against 5.069 at the earlier 0.15 m).
+- in a later refit, the players' speed percentiles. Degraded IDSSE matches them best with no
+  added player noise (loss 0.302, against 5.069 at the earlier 0.15 m).
 
 Training rows are every eighth frame of each half, degraded with two seeds: 250,672 dead-ball rows
 and 276,572 team rows. The held-out matches are degraded with a third seed.
@@ -233,7 +235,8 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
 - It applies the committed `models/possession_v1+trees-wide+deadtrees.json`, validates the file
   with the organisers' own checks, and prints aggregates and the file's SHA-256. The model was
   frozen on 10 November 2026; it gives
-  `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
+  `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`. The file we submit,
+  `BasahKuyups.csv`, is this output renamed.
 - On the same day, a fresh clone of `main` reproduced that digest on a Windows 11 laptop, with
   Python 3.12.4 and a new virtual environment from `requirements.txt`, in 43 seconds. The bundle
   was read in place through `MTAH_DATA_DIR`, the starter kit's own setting, instead of being

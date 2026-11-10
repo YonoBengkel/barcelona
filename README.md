@@ -1,9 +1,9 @@
 # Barcelona: ball possession for More than a Hack 2027
 
-Team entry for **More than a Hack 2027, Phase 1: Ball Possession** (Metrica Sports, FC Barcelona
-and Mobile World Capital Barcelona). For every frame of the tactical video of FC Barcelona vs
-Athletic Club, say whether the home side has the ball (`H`), the away side has it (`A`), the ball
-is dead (`D`), or the system declines to answer (`X`).
+Entry of team **BasahKuyups** for **More than a Hack 2027, Phase 1: Ball Possession** (Metrica
+Sports, FC Barcelona and Mobile World Capital Barcelona). For every frame of the tactical video of
+FC Barcelona vs Athletic Club, say whether the home side has the ball (`H`), the away side has it
+(`A`), the ball is dead (`D`), or the system declines to answer (`X`).
 
 > **Status: model frozen on 10 November 2026**, submission due 17 November. Scope and milestones
 > are in [PRD.md](PRD.md), the design in [ARCHITECTURE.md](ARCHITECTURE.md), and the approach,
@@ -47,7 +47,9 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
 
 It applies `models/possession_v1+trees-wide+deadtrees.json`, which `scripts/train_models.py` fits
 on public data from other matches (see [kaggle/](kaggle/README.md)), and prints aggregates only,
-including the file's SHA-256 for comparing runs. To check the data bundle, the frame alignment
+including the file's SHA-256 for comparing runs. The file we submit, `BasahKuyups.csv`, is this
+output renamed: SHA-256 `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
+To check the data bundle, the frame alignment
 and the environment in one go, this rebuilds the organisers' four baselines and confirms they
 match the committed ones:
 

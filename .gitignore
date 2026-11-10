@@ -73,3 +73,5 @@ external/
 kaggle-results*.zip
 # Temporary files of the tests (pytest.ini).
 .pytest_tmp/
+# The two files uploaded through the form: the labels, and TECHNICAL.md as a PDF.
+submission/
