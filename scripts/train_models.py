@@ -19,7 +19,10 @@ lines); the setting written out is the one that does best on all seven. The orga
 (nearest player, majority over +/- 2 s) is scored on the same frames, at label tolerances of 0.5,
 1 and 2 s. Each grid named by --grids makes a variant of its own: 'base', the grid of M9 to M11e,
 and 'wide', which holds every base setting and reaches further up in dead_bias ('+widebias'; M11e
-chose 1.0, the top of the base grid).
+chose 1.0, the top of the base grid). 'mindur' ('+mindur', M11j) holds every base setting too, and
+adds team_min and dead_min, the fewest frames a spell of H or A and of D may last
+(possession.decode), with a lower team_switch beside them: once a minimum stops the flicker, a
+lower cost may let short possessions through.
 
 It then prints where the held-out pipeline goes wrong (possession.diagnose): its calls and
 errors by ball state, and the cause of every possession it misses. With --oracle it also decodes
@@ -59,7 +62,8 @@ Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not 
 laptop.
 
     python scripts/train_models.py [--designs v1 [v2 v3]] [--dead trees [logistic]]
-                                   [--team trees-wide [trees logistic]] [--grids base [wide]]
+                                   [--team trees-wide [trees logistic]]
+                                   [--grids base [wide] [mindur]]
                                    [--old-ground] [--reference VARIANT]
                                    [--speed-factors 0.9 0.8] [--seeds 2] [--step 8]
                                    [--out-dir models] [--oracle]
@@ -113,10 +117,17 @@ DECODER_AXES = {"team_switch": (8, 16, 32, 64, 128, 256, 512),
                 "dead_switch": (8, 16, 32, 64, 128, 256, 512),
                 "dead_bias": (-1.0, -0.5, 0.0, 0.5, 1.0)}
 DECODER_GRID = tuple(itertools.product(*DECODER_AXES.values()))
-GRIDS = ("base", "wide")
+GRIDS = ("base", "wide", "mindur")
+GRID_SUFFIX = {"wide": "+widebias", "mindur": "+mindur"}
 # M11e chose dead_bias 1.0, the top of the base grid, in six folds of seven
 # (runs/20261109T1004Z-train_models). The wide grid adds these above it (M11f).
 WIDE_DEAD_BIAS = (1.5, 2.0, 2.5, 3.0)
+# M11j: every spell held to a minimum length in frames (1 is none), with a lower team_switch beside
+# the base grid's, since the minimum now stops the flicker a high cost was there to stop.
+MIN_TEAM_SWITCH = (4,)
+TEAM_MIN = (1, 6, 12, 25)  # at 25 fps: none, 0.24, 0.48 and 1 s
+DEAD_MIN = (1, 25, 50)  # none, 1 and 2 s
+MINIMA = ("team_min", "dead_min")
 # The speed check (M11f) scales the players' speeds of the held-out matches by these factors.
 SPEED_FACTORS = (0.9, 0.8)
 PLAYER_SPEEDS = ("speed_all", "speed_home", "speed_away")
@@ -134,9 +145,15 @@ OLD_SUFFIX = " (old ground)"
 
 def decoder_axes(grid="base"):
     """The decoder's axes for one of GRIDS: 'base' is DECODER_AXES; 'wide' extends dead_bias
-    upward by WIDE_DEAD_BIAS and keeps every base setting, in the same axis order."""
+    upward by WIDE_DEAD_BIAS; 'mindur' adds MIN_TEAM_SWITCH below team_switch and the minima
+    TEAM_MIN and DEAD_MIN after the three costs. Each keeps every base setting, with the base
+    axes first and in the same order."""
     if grid == "base":
         return DECODER_AXES
+    if grid == "mindur":
+        return dict(DECODER_AXES,
+                    team_switch=tuple(MIN_TEAM_SWITCH) + tuple(DECODER_AXES["team_switch"]),
+                    team_min=tuple(TEAM_MIN), dead_min=tuple(DEAD_MIN))
     return dict(DECODER_AXES, dead_bias=tuple(DECODER_AXES["dead_bias"]) + tuple(WIDE_DEAD_BIAS))
 
 
@@ -282,11 +299,23 @@ def choose(model, kind, train, held_out, matches, version, rule):
 
 
 def decoded(log_ps, settings):
-    """Per setting in turn, the match's decoded codes with an X between halves."""
-    params = [np.array([s[i] for s in settings], dtype=np.float64) for i in range(3)]
-    paths = [viterbi(log_p, *params) for log_p in log_ps]
+    """Per setting in turn, the match's decoded codes with an X between halves.
+
+    A setting is (team_switch, dead_switch, dead_bias), or those three with (team_min, dead_min)
+    after them; the settings that share their minima are decoded together, in one pass.
+    """
+    groups = collections.defaultdict(list)
+    for k, setting in enumerate(settings):
+        groups[tuple(setting[3:5]) or (1, 1)].append(k)
+    paths = [[None] * len(settings) for _ in log_ps]
+    for (team_min, dead_min), index in groups.items():
+        params = [np.array([settings[k][i] for k in index], dtype=np.float64) for i in range(3)]
+        for half, log_p in enumerate(log_ps):
+            batch = viterbi(log_p, *params, team_min=team_min, dead_min=dead_min)
+            for column, k in enumerate(index):
+                paths[half][k] = batch[:, column]
     for k in range(len(settings)):
-        yield practice.joined([path[:, k] for path in paths], gap=pm.X)
+        yield practice.joined([half[k] for half in paths], gap=pm.X)
 
 
 def best(table, matches):
@@ -320,8 +349,8 @@ def fit_decoder(held_out, oof, matches, axes=None):
 
     Returns (setting, practice range, held-out codes per match, summary), where summary holds
     the held-out (spellF1, macroF1) per label tolerance, the held-out spellF1 per match, and
-    under 'nested' each match's setting chosen on the other six, as a (team_switch, dead_switch,
-    dead_bias) tuple.
+    under 'nested' each match's setting chosen on the other six, as a tuple in the order of the
+    axes.
     """
     axes = DECODER_AXES if axes is None else axes
     grid = tuple(itertools.product(*axes.values()))
@@ -373,7 +402,8 @@ def fit_decoder(held_out, oof, matches, axes=None):
     setting = dict(zip(axes, grid[final]))
     edges = ["{} {}".format(name, "upper" if value == axes[name][-1] else "lower")
              for name, value in setting.items()
-             if value in (axes[name][0], axes[name][-1])]
+             if value in (axes[name][0], axes[name][-1])
+             and not (name in MINIMA and value == 1)]  # a minimum of one frame is no minimum
     print("chosen on all seven: {}{}".format(setting, "  AT THE EDGE OF THE GRID: " + ", ".join(
         edges) + "; widen it" if edges else ""))
 
@@ -518,8 +548,8 @@ def score_settings(held_out, evidence, settings, matches):
     """The held-out summary fit_decoder reports, for evidence decoded with given settings:
     {'pooled': {tolerance: (spellF1, macroF1)}, 'per_match': {match: spellF1 at +/-1 s}}.
 
-    evidence: {match: log-probabilities per half}; settings: {match: (team_switch, dead_switch,
-    dead_bias)}, each match's own.
+    evidence: {match: log-probabilities per half}; settings: {match: a setting as decoded() takes
+    it}, each match's own.
     """
     rows = collections.defaultdict(list)
     for match in matches:
@@ -535,15 +565,15 @@ def score_settings(held_out, evidence, settings, matches):
 
 def variant_name(version, dead_kind, team_kind, grid="base"):
     """'v1' with logistic models; '+trees' or '+trees-wide' for a tree team model, '+deadtrees'
-    for a tree dead-ball model, '+widebias' for the wide decoder grid: 'v1+trees-wide+deadtrees'
-    is the one adopted in M11e."""
+    for a tree dead-ball model, '+widebias' for the wide decoder grid and '+mindur' for the one
+    with minimum spell lengths: 'v1+trees-wide+deadtrees' is the one adopted in M11e."""
     name = version
     if team_kind != "logistic":
         name += "+" + team_kind
     if dead_kind != "logistic":
         name += "+dead" + dead_kind
     if grid != "base":
-        name += "+" + grid + "bias"
+        name += GRID_SUFFIX[grid]
     return name
 
 
@@ -696,11 +726,12 @@ def main():
     # for both models (runs/20261109T1004Z-train_models), M11g refitted them on the recalibrated
     # ground (runs/20261109T1411Z-train_models); --dead logistic trees --team trees trees-wide,
     # --grids base wide, --old-ground, --speed-factors 0.9 0.8 or --designs v1 v3 bring back the
-    # comparisons of M11e to M11i.
+    # comparisons of M11e to M11i; --grids base mindur is M11j's.
     parser.add_argument("--dead", nargs="+", default=["trees"], choices=DEAD_KINDS)
     parser.add_argument("--team", nargs="+", default=["trees-wide"], choices=TEAM_KINDS)
     parser.add_argument("--grids", nargs="+", default=["base"], choices=GRIDS,
-                        help="decoder grids to search, each a variant of its own")
+                        help="decoder grids to search, each a variant of its own: wide (M11f), "
+                             "mindur (M11j)")
     parser.add_argument("--old-ground", action=argparse.BooleanOptionalAction, default=False,
                         help="also fit the pipeline on the practice ground before its latest "
                              "change and score it on this run's held-out matches, as the reference")

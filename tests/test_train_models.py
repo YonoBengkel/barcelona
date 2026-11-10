@@ -13,6 +13,8 @@ import types
 
 import numpy as np
 
+from possession import practice
+from possession.decode import viterbi
 from possession.features import NAMES
 from possession.models import design_names, load
 
@@ -254,6 +256,66 @@ def test_the_wide_grid_holds_every_base_setting():
     assert train_models.variant_name("v1", "trees", "trees-wide", "wide") == \
         "v1+trees-wide+deadtrees+widebias"
     assert train_models.variant_name("v1", "trees", "trees-wide") == "v1+trees-wide+deadtrees"
+
+
+def test_the_mindur_grid_holds_every_base_setting():
+    base, held = train_models.decoder_axes("base"), train_models.decoder_axes("mindur")
+    assert list(held)[:3] == list(base) and list(held)[3:] == list(train_models.MINIMA)
+    plain = {setting + (1, 1) for setting in itertools.product(*base.values())}
+    assert plain < set(itertools.product(*held.values()))
+    assert min(held["team_switch"]) < min(base["team_switch"])
+    assert train_models.variant_name("v1", "trees", "trees-wide", "mindur") == \
+        "v1+trees-wide+deadtrees+mindur"
+
+
+def test_decoded_groups_the_settings_by_their_minima():
+    rng = np.random.default_rng(19)
+    log_ps = [np.log(rng.dirichlet(np.ones(3) * 0.5, size=n)) for n in (120, 90)]
+    settings = [(8, 8, 0.0), (16, 4, 0.5, 3, 5), (8, 8, 0.0, 1, 1), (4, 8, -0.5, 3, 5),
+                (8, 16, 0.0, 6, 1)]
+    out = list(train_models.decoded(log_ps, settings))
+    assert np.array_equal(out[0], out[2])  # minima of one frame are the plain model
+    for setting, codes in zip(settings, out):
+        minima = dict(zip(train_models.MINIMA, setting[3:5]))
+        halves = [viterbi(log_p, *setting[:3], **minima)[:, 0] for log_p in log_ps]
+        assert np.array_equal(codes, practice.joined(halves, gap=train_models.pm.X))
+
+
+def test_the_mindur_grid_runs_end_to_end(tmp_path, monkeypatch, capsys):
+    rng = np.random.default_rng(23)
+    matches = ["M1", "M2", "M3"]
+    train, held_out, truth = synthetic_design_inputs(rng, matches)
+    speed = design_names("v1").index("speed_all")
+    for part in held_out.values():
+        slow = part["X"].copy()
+        slow[:, speed] -= 0.5
+        part["slow"] = {0.8: slow}
+    axes = {"team_switch": (4, 16), "dead_switch": (16,), "dead_bias": (0.0,)}
+    monkeypatch.setattr(train_models, "labels_at",
+                        lambda match, tolerances: {t: truth[match] for t in tolerances})
+    monkeypatch.setattr(train_models, "DECODER_AXES", axes)
+    monkeypatch.setattr(train_models, "MIN_TEAM_SWITCH", (2,))
+    monkeypatch.setattr(train_models, "TEAM_MIN", (1, 3))
+    monkeypatch.setattr(train_models, "DEAD_MIN", (1, 5))
+    monkeypatch.setattr(train_models, "GRID", (1.0,))
+    args = types.SimpleNamespace(seeds=2, step=8, out_dir=str(tmp_path), oracle=False,
+                                 grids=["base", "mindur"], speed_factors=[0.8])
+
+    summaries = train_models.fit_design("v1", ["logistic"], ["logistic"], train, held_out,
+                                        matches, args, time.time())
+
+    assert set(summaries) == {"v1", "v1+mindur"}
+    held = load(str(tmp_path / "possession_v1+mindur.json"))
+    assert set(held["decoder"]) == set(train_models.decoder_axes("mindur"))
+    assert held["fitted_on"]["decoder_grid"]["team_switch"] == [2, 4, 16]
+    assert held["fitted_on"]["decoder_grid"]["team_min"] == [1, 3]
+    assert set(load(str(tmp_path / "possession_v1.json"))["decoder"]) == set(axes)
+    for summary in summaries.values():
+        # The speed check decodes the nested settings again, minima and all.
+        assert summary["speed"][1.0][:2] == summary["pooled"][1.0]
+    train_models.compare(summaries, matches, "v1")
+    printed = capsys.readouterr().out
+    assert "decoder grid mindur" in printed and "v1+mindur against v1" in printed
 
 
 def test_the_best_passing_variant_is_the_one_adopted():

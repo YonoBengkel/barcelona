@@ -33,7 +33,9 @@ per-frame features ──► possession.models.design: log scale for skewed feat
 per-frame evidence: log-probability of H, A, D
    │  possession.decode: three-state hidden Markov model, Viterbi. A path pays team_switch for
    │  H <-> A and dead_switch for each stoppage; dead_bias shifts the D evidence. The three
-   │  numbers sit in the model file beside the models
+   │  numbers sit in the model file beside the models. Two optional ones, team_min and
+   │  dead_min, hold every spell to a minimum length in frames (M11j's 'mindur' grid; the
+   │  frozen model has neither)
    ▼
 labels per graded half ──► possession.submission: X outside the graded halves, LF line endings
    │  scripts/make_submission.py validates the file with possession_metrics.validate_submission
