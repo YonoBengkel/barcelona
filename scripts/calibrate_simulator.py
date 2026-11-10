@@ -39,6 +39,12 @@ other parameter at its default. The rule, fixed before the run: the cell with th
 becomes the default only if its loss is below the current defaults' (4.698); otherwise nothing
 changes.
 
+No cell did (runs/20261110T0226Z-calibrate_simulator). Gaps that last until the restart bring the
+long gaps to 82-98% dead and the players there to 0.97-1.09 m/s, near the match's 0.91. But with
+the stoppages hidden, the players move faster while the ball is seen (2.05-2.24 m/s against the
+match's 1.93), and more gaps start near a line. The best cell, dead_weight 0.5 with every stoppage
+gap lasting until the restart, scored 4.736. The defaults stayed.
+
     python scripts/calibrate_simulator.py [--samples 80] [--local 120] [MATCH_ID ...]
     python scripts/calibrate_simulator.py --players [MATCH_ID ...]
     python scripts/calibrate_simulator.py --dead-scan [MATCH_ID ...]

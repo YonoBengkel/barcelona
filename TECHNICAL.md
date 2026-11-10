@@ -193,16 +193,18 @@ check we can make falls where the practice ground predicts:
     at a median 4.8 m/s against 1.5 m/s, and IDSSE players are 5-9% faster in the middle of the
     speed distribution.
   - The simulator places ball gaps without regard to stoppages, while the match's tracker loses the
-    ball mostly when play has stopped. Placing them at stoppages fitted the match's tracking worse,
-    not better: a gap's length is drawn whatever play does, so a long gap outlasts its stoppage, and
-    more gaps start near a line than in the match.
+    ball mostly when play has stopped. We tried placing them at stoppages, and letting those gaps
+    last until the restart. That made the long gaps 82-98% dead, with players there almost as slow
+    as the match's. But it moved other statistics away from the match: the players ran faster
+    while the ball was seen, and more gaps started near a line. No setting fitted the match's
+    tracking better overall, so the simulator stayed as it was.
   - Anything the simulator does not imitate, the held-out scores cannot see.
 - **The line on control is ours.** The DFL's labels, filtered by our rule, approximate the
   challenge's ground truth: practice possessions still run shorter (mean 7.7-13.2 s per match)
   than the public window's (14.2 s).
 - **With more time we would:**
-  - let the simulator's gaps that open at a stoppage last until the restart, calibrated to the
-    players' speed during gaps;
+  - model where the match's tracker loses the ball, for instance in flight before it goes out, so
+    that gaps can sit at stoppages without starting near a line too often;
   - add a "last touch" feature for passes in flight;
   - add the referee's whistle from audio and the Smart Tagging as evidence, once there is a fair
     way to weigh them without labels on this match;

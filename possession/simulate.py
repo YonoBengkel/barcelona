@@ -61,6 +61,7 @@ class DegradeParams:
     dead_weight: float = 0.0
     # Chance that a gap opening while the ball is out of play lasts until play restarts instead of
     # a drawn length (M11h). At none the random draws are exactly those of the simulator before.
+    # M11h's scan against dead_weight found no setting that fits the match better than none.
     until_restart: float = 0.0
     # Chance that a stretch with the ball outside the lines stays visible.
     outside_visible: float = 0.187
