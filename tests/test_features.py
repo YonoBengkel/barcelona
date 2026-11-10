@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from possession.features import (NAMES, attack_directions, bridged_ball, compute, gap_frames,
-                                 rolling_mean, swapped)
+from possession.features import (ALL_NAMES, NAMES, attack_directions, bridged_ball, compute,
+                                 gap_frames, last_touch, rolling_mean, swapped)
 
 PITCH = (105.0, 68.0)
 
@@ -51,17 +51,32 @@ def test_nearest_player_and_shape():
     half["x"][:, 3] = 0.5    # a home outfielder next to the ball at the centre spot
     half["y"][:, 3] = 0.0
     features, names = compute(half, PITCH)
-    assert features.shape == (200, len(NAMES)) and names == NAMES
-    column = dict(zip(NAMES, features.T))
+    assert features.shape == (200, len(ALL_NAMES)) and names == ALL_NAMES
+    assert names[:len(NAMES)] == NAMES  # the last-touch columns come after the v1 ones
+    column = dict(zip(names, features.T))
     assert np.all(column["near_home"] < column["near_away"])
     assert np.all(column["crowd2_home"] >= 1)
+    assert np.all(column["touch_team"] == 1) and np.all(column["touch_run"] == 1)
     assert not np.isinf(features).any()
 
 
 def test_swapping_mirrors_the_team_features():
     half = two_teams()
     half["x"][:, 3], half["y"][:, 3] = 0.5, 0.0
-    original = dict(zip(NAMES, compute(half, PITCH)[0].T))
-    mirrored = dict(zip(NAMES, compute(swapped(half), PITCH)[0].T))
+    original = dict(zip(ALL_NAMES, compute(half, PITCH)[0].T))
+    mirrored = dict(zip(ALL_NAMES, compute(swapped(half), PITCH)[0].T))
     assert np.allclose(original["near_home"], mirrored["near_away"])
     assert np.allclose(original["near_diff"], -mirrored["near_diff"])
+    assert np.array_equal(original["touch_team"], -mirrored["touch_team"])
+    assert np.array_equal(original["touch_run"], mirrored["touch_run"])
+
+
+def test_last_touch_follows_the_side_nearest_the_ball():
+    near_home = np.array([0.5, 0.5, 0.5, 5, 5, 1.0, 1.0, 6, 6, np.nan])
+    near_away = np.array([8, 8, 8, 6, 6, 9, 9, 1.2, 1.2, np.nan])
+    team, age, run = last_touch(near_home, near_away, radius=1.5)
+    assert team.tolist() == [1, 1, 1, 1, 1, 1, 1, -1, -1, -1]
+    assert run.tolist() == [1, 1, 1, 1, 1, 2, 2, 1, 1, 1]  # home's second touch, then away's first
+    assert age[4] == pytest.approx(2 / 25) and age[9] == pytest.approx(1 / 25)
+    team, age, run = last_touch(np.array([5.0]), np.array([5.0]))  # nobody near the ball yet
+    assert team[0] == 0 and np.isnan(age[0]) and run[0] == 0

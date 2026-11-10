@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from possession.features import NAMES
+from possession.features import ALL_NAMES, EXTRA_NAMES, NAMES
 from possession.models import DESIGN_NAMES, SHORT_CONTEXT, design, design_names, fit, \
     fit_trees, load, log_sigmoid, log_state_probabilities, probability, save, score, \
     state_probabilities
@@ -20,6 +20,14 @@ def synthetic(n=3000, seed=0):
 def test_design_adds_the_context_columns():
     X = design(np.ones((50, len(NAMES)), dtype=np.float32))
     assert X.shape == (50, len(DESIGN_NAMES))
+
+
+def test_design_v3_adds_the_last_touch_columns_and_v1_ignores_them():
+    features = np.ones((50, len(ALL_NAMES)), dtype=np.float32)
+    X1, X3 = design(features), design(features, "v3")
+    assert X1.shape[1] == len(design_names("v1"))
+    assert X3.shape[1] == len(design_names("v3")) == X1.shape[1] + len(EXTRA_NAMES)
+    assert design_names("v3")[len(NAMES):len(ALL_NAMES)] == EXTRA_NAMES
 
 
 def test_numpy_inference_matches_scikit_learn():

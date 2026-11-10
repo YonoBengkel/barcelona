@@ -19,6 +19,12 @@ Two families, for the two halves of the label:
 A short ball gap is bridged by linear interpolation, so the possession features survive a flicker.
 A long one is left unknown and flagged as such: guessing where the ball was across ten seconds
 would invent information the decoder should not trust.
+
+Three more columns (EXTRA_NAMES, M11i) remember the last touch: which side last had a player
+within CONTACT_M of the ball, how long ago, and how many touches in a row that side has made. A
+pass in flight is near nobody, or near the other side's players, while the team that kicked it
+still has the ball; and two touches in a row by one side are a completed pass, the challenge's
+sign of control. Design v1 leaves these columns out, so its models are unchanged.
 """
 
 import numpy as np
@@ -30,6 +36,8 @@ SMOOTH_S = 1.0
 NEAR_LINE_M = 2.0
 BOX_DEPTH_M, BOX_HALF_WIDTH_M = 16.5, 20.16
 CROWD_RADII_M = (2.0, 5.0)
+# A player this close to the ball counts as touching it.
+CONTACT_M = 1.5
 
 NAMES = (
     "ball_seen", "ball_bridged", "gap_since", "gap_until", "gap_length",
@@ -41,6 +49,9 @@ NAMES = (
     "advance_home", "advance_away", "width_home", "width_away", "length_home", "length_away",
     "tracked_home", "tracked_away", "own_half_share", "players_in_boxes",
 )
+# Appended after NAMES, so NAMES keeps its positions (M11i).
+EXTRA_NAMES = ("touch_team", "touch_age", "touch_run")
+ALL_NAMES = NAMES + EXTRA_NAMES
 
 
 def rolling_mean(values, window):
@@ -126,8 +137,44 @@ def attack_directions(half):
     return np.array([-sides[0], -sides[1]])
 
 
+def last_touch(near_home, near_away, radius=CONTACT_M):
+    """(team, age, run) per frame, from each side's nearest player (NaN where the ball is unknown).
+
+    A frame is a touch when a player is within radius of the ball, by the side whose player is
+    nearer. team: +1 if the last touch was home's, -1 if away's, 0 before any. age: seconds since
+    the last touch, NaN before any. run: how many touches in a row that side has made, a touch
+    being a stretch of consecutive frames touched by one side; 0 before any.
+    """
+    n = len(near_home)
+    if n == 0:
+        return np.zeros(0), np.zeros(0), np.zeros(0)
+    home = np.where(np.isnan(near_home), np.inf, near_home)
+    away = np.where(np.isnan(near_away), np.inf, near_away)
+    contact = np.minimum(home, away) <= radius
+    side = np.where(home <= away, 1, -1)
+    index = np.arange(n)
+    last = np.maximum.accumulate(np.where(contact, index, -1))
+    touched = last >= 0
+    team = np.where(touched, side[np.maximum(last, 0)], 0).astype(np.float64)
+    age = np.where(touched, (index - last) / FPS, np.nan)
+
+    previous = np.concatenate(([False], contact[:-1] & (side[:-1] == side[1:])))
+    start = contact & ~previous  # the first frame of each touch
+    starts = np.flatnonzero(start)
+    run = np.zeros(n)
+    if len(starts):
+        sides = side[starts]
+        new_streak = np.concatenate(([True], sides[1:] != sides[:-1]))
+        first = np.flatnonzero(new_streak)
+        runs = np.arange(len(starts)) - first[np.cumsum(new_streak) - 1] + 1
+        latest = np.cumsum(start) - 1  # the latest touch begun at or before each frame
+        run = np.where(latest >= 0, runs[np.maximum(latest, 0)], 0).astype(np.float64)
+    return team, age, run
+
+
 def compute(half, pitch):
-    """(features, NAMES): a (frames, len(NAMES)) float32 matrix, NaN where a feature is unknown."""
+    """(features, ALL_NAMES): a (frames, len(ALL_NAMES)) float32 matrix, NaN where a feature is
+    unknown. The first len(NAMES) columns are NAMES, the last EXTRA_NAMES."""
     length, width = pitch
     n = len(half["ball_x"])
     window = int(SMOOTH_S * FPS) // 2
@@ -201,7 +248,9 @@ def compute(half, pitch):
         np.fmin(per_team[HOME]["own_half"], per_team[AWAY]["own_half"]),
         in_boxes.sum(axis=1).astype(np.float64),
     ]
-    return np.stack(columns_out, axis=1).astype(np.float32), NAMES
+    team_touch, touch_age, touch_run = last_touch(near[HOME], near[AWAY])
+    columns_out += [team_touch, np.log1p(touch_age), touch_run]
+    return np.stack(columns_out, axis=1).astype(np.float32), ALL_NAMES
 
 
 def swapped(half):

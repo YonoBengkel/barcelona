@@ -26,7 +26,7 @@ import json
 
 import numpy as np
 
-from possession.features import FPS, NAMES, rolling_mean
+from possession.features import ALL_NAMES, FPS, NAMES, rolling_mean
 
 # Skewed, non-negative features modelled on a log scale.
 LOG1P = ("ball_speed", "speed_all", "speed_home", "speed_away", "near_home", "near_away",
@@ -41,22 +41,25 @@ CONTEXT = (("speed_all", 5.0), ("ball_seen", 5.0), ("ball_speed", 2.5), ("near_d
 # wrong team or were merged with a neighbour, most of them short).
 SHORT_CONTEXT = (("near_diff", 1.0), ("near_home", 1.0), ("near_away", 1.0),
                  ("crowd2_home", 1.0), ("crowd2_away", 1.0), ("ball_seen", 1.0))
-DESIGNS = {"v1": CONTEXT, "v2": CONTEXT + SHORT_CONTEXT}
+DESIGNS = {"v1": CONTEXT, "v2": CONTEXT + SHORT_CONTEXT, "v3": CONTEXT}
+# The feature columns each design starts from. M11i: v3 adds the last-touch features
+# (possession.features.EXTRA_NAMES), which compute() appends after NAMES.
+RAW = {"v1": NAMES, "v2": NAMES, "v3": ALL_NAMES}
 
 
 def design_names(version="v1"):
     """The columns design() makes for one version of the design."""
-    return NAMES + tuple("{}_ctx{:g}s".format(name, seconds)
-                         for name, seconds in DESIGNS[version])
+    return RAW[version] + tuple("{}_ctx{:g}s".format(name, seconds)
+                                for name, seconds in DESIGNS[version])
 
 
 DESIGN_NAMES = design_names("v1")
 
 
 def design(features, version="v1"):
-    """(frames, len(design_names(version))) float64: log1p on skewed features, then context
-    means."""
-    X = features.astype(np.float64)
+    """(frames, len(design_names(version))) float64: the design's feature columns, log1p on
+    skewed features, then context means."""
+    X = features[:, :len(RAW[version])].astype(np.float64)
     index = {name: i for i, name in enumerate(NAMES)}
     for name in LOG1P:
         X[:, index[name]] = np.log1p(np.maximum(X[:, index[name]], 0.0))
