@@ -246,6 +246,8 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
   Python 3.12.4 and a new virtual environment from `requirements.txt`, in 43 seconds. The bundle
   was read in place through `MTAH_DATA_DIR`, the starter kit's own setting, instead of being
   copied into `data/`.
+- The decoder's code later gained the minimum spell lengths of Section 2, which the frozen model
+  does not use. Run again on that code, the command gave the same digest.
 
 **Refitting the model** uses public data only and is not needed to reproduce the file:
 
