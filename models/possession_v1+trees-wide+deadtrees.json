@@ -267457,7 +267457,8 @@
    "short_gap_share": 0.167,
    "short_gap_sigma": 0.7,
    "slow_mps": 2.0,
-   "slow_weight": 0.405
+   "slow_weight": 0.405,
+   "until_restart": 0.0
   },
   "step": 8,
   "team_model": "trees-wide 600x127 lr 0.05 leaf>=100"

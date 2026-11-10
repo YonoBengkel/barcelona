@@ -231,15 +231,15 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
   | tactical `_atd.txt` | `f130e350d2bfdf734b7e32f072931fccc6d015c1e837d082064875fe0a700431` |
 
 - It applies the committed `models/possession_v1+trees-wide+deadtrees.json`, validates the file
-  with the organisers' own checks, and prints aggregates and the file's SHA-256. The current model
-  gives `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`; this line is updated
-  when the model is frozen.
+  with the organisers' own checks, and prints aggregates and the file's SHA-256. The model was
+  frozen on 10 November 2026; it gives
+  `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
 
-**Refitting the models** uses public data only and is not needed to reproduce the file:
+**Refitting the model** uses public data only and is not needed to reproduce the file:
 
 ```bash
 python scripts/fetch_idsse.py      # IDSSE at the pinned revision, size and digest checked
-python scripts/train_models.py     # about an hour on 4 CPUs
+python scripts/train_models.py     # the frozen model alone, about 25 minutes on 4 CPUs
 ```
 
 - We ran the refit on Kaggle through [kaggle/](kaggle/README.md). Each run's log and manifest

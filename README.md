@@ -5,9 +5,9 @@ and Mobile World Capital Barcelona). For every frame of the tactical video of FC
 Athletic Club, say whether the home side has the ball (`H`), the away side has it (`A`), the ball
 is dead (`D`), or the system declines to answer (`X`).
 
-> **Status: work in progress.** Scope and milestones are in [PRD.md](PRD.md), the design in
-> [ARCHITECTURE.md](ARCHITECTURE.md), and the approach, data, rules, results and limitations in
-> the technical document, [TECHNICAL.md](TECHNICAL.md).
+> **Status: model frozen on 10 November 2026**, submission due 17 November. Scope and milestones
+> are in [PRD.md](PRD.md), the design in [ARCHITECTURE.md](ARCHITECTURE.md), and the approach,
+> data, rules, results and limitations in the technical document, [TECHNICAL.md](TECHNICAL.md).
 
 ## Layout
 

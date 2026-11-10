@@ -44,7 +44,8 @@ DEFAULT_OUT = os.path.join(ROOT, "evaluation", "results", "possession_v1.csv")
 # Trees for both the dead-ball and the team call (M11e), refitted in M11g on the practice ground
 # whose player noise was fitted to the match's player speeds. Adopted on 2026-11-09 by the rule in
 # scripts/train_models.py (runs/20261109T1411Z-train_models): held-out spellF1 0.650 against 0.539
-# for the same kinds fitted on the ground before, scored on the same frames.
+# for the same kinds fitted on the ground before, scored on the same frames. Frozen on 2026-11-10
+# (M12): M11h and M11i found nothing better.
 DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+trees-wide+deadtrees.json")
 PUBLIC_GT = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
 # baseline_smooth50 on the public window, as docs/challenge/README.md prints it.
