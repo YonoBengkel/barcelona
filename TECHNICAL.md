@@ -87,6 +87,10 @@ practice ground at ±1 s labels.
   They improved the team model frame by frame (log loss 0.2526 to 0.2466) but not the
   possessions: +0.0008, better on 3 of 7 matches. Kept in the code as design v3, not used.
 - **A wider decoder grid** (`dead_bias` up to 3.0): the search chose the same setting.
+- **A minimum length for every spell in the decoder**, aimed at the possessions merged with a
+  neighbour: up to 1 s for a team's spell and 2 s for a stoppage, beside a lower cost of a change
+  of team. The search kept that cost where it was and held a team's spell to at least 1 s:
+  +0.0003, better on 2 of 7 matches. Kept in the code as the decoder grid `mindur`, not used.
 - **0.15 m of player position noise in the simulator.** Once set against the match's player speeds
   it came out at none, which changed the practice ground itself (Section 3).
 
@@ -213,7 +217,8 @@ check we can make falls where the practice ground predicts:
     that gaps can sit at stoppages without starting near a line too often;
   - add the referee's whistle from audio and the Smart Tagging as evidence, once there is a fair
     way to weigh them without labels on this match;
-  - try a semi-Markov decoder that models how long possessions last.
+  - give the decoder a fuller model of how long possessions last: holding every spell to a
+    minimum, the simplest such model, gained almost nothing (Section 2).
 
 ## 7. Reproduction
 
