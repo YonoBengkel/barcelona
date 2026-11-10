@@ -1,0 +1,46 @@
+commit d6096ef8e84141c4aad8be4b171ae6cf1bfd1eb5
+job scripts/calibrate_simulator.py
+4 CPUs, 1038 GB free in /tmp
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+........................................................................ [ 97%]
+..                                                                       [100%]
+74 passed in 16.59s
+
+$ /tmp/venv/bin/python scripts/calibrate_simulator.py
+defaults: loss 4.698
+local   27: loss 4.670
+
+best loss 4.670
+  line_weight=0.000, box_weight=0.643, slow_weight=0.403, crowd_weight=0.589, dead_weight=0.168, outside_visible=0.066, short_gap_share=0.161, long_gap_median_s=8.000, long_gap_sigma=0.600
+
+statistic                degraded      match
+gap_s.p10                    0.44       0.47
+gap_s.p25                    4.89       6.09
+gap_s.p50                    9.70      10.72
+gap_s.p75                   19.22      21.06
+gap_s.p90                   33.96      33.81
+seen_s.p10                   2.02       2.18
+seen_s.p50                  14.68      13.80
+seen_s.p90                  49.08      61.68
+speed_before_gap_p50        4.899      1.510
+speed_seen_p50              4.451      5.080
+near_line_before            0.427      0.307
+near_line_seen              0.147      0.091
+box_before                  0.320      0.314
+box_seen                    0.164      0.136
+crowd2_before               0.741      0.770
+crowd2_seen                 0.611      0.580
+outside_seen                0.030      0.042
+players_seen_p50            1.997      1.930
+players_gap_5_15_p50        1.653      1.310
+players_gap_15_p50          1.190      0.910
