@@ -50,13 +50,18 @@ higher, it is better on at least 5 of the 7 matches, it loses nothing at +/-0.5 
 its macroF1 falls by at most 0.005. If several pass, the one with the highest held-out spellF1 at
 +/-1 s is adopted.
 
+The model was frozen on 2026-11-10 (M12). With no option the script fits that model alone (design
+v1, tree models for both calls, the base decoder grid, M11g's practice ground) and writes
+models/possession_v1+trees-wide+deadtrees.json as committed, in about 25 minutes on Kaggle. The
+options bring back the comparisons of M11a to M11i.
+
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.
 
-    python scripts/train_models.py [--designs v1 [v2]] [--dead trees [logistic]]
+    python scripts/train_models.py [--designs v1 [v2 v3]] [--dead trees [logistic]]
                                    [--team trees-wide [trees logistic]] [--grids base [wide]]
-                                   [--no-old-ground] [--reference VARIANT]
-                                   [--speed-factors [0.9 0.8]] [--seeds 2] [--step 8]
+                                   [--old-ground] [--reference VARIANT]
+                                   [--speed-factors 0.9 0.8] [--seeds 2] [--step 8]
                                    [--out-dir models] [--oracle]
 """
 
@@ -687,23 +692,25 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # v2 lost to v1 on 2026-11-09 (runs/20261109T0833Z-train_models); run --designs v1 v2 to see it.
     parser.add_argument("--designs", nargs="+", default=["v1"], choices=sorted(DESIGNS))
-    # M11e adopted trees for both models (v1+trees-wide+deadtrees,
-    # runs/20261109T1004Z-train_models); M11f found the wide grid changes nothing
-    # (runs/20261109T1114Z-train_models). Run --dead logistic trees --team trees trees-wide
-    # --no-old-ground --speed-factors on the old ground to repeat M11e.
+    # The defaults fit the model frozen on 2026-11-10 (M12) and nothing else. M11e adopted trees
+    # for both models (runs/20261109T1004Z-train_models), M11g refitted them on the recalibrated
+    # ground (runs/20261109T1411Z-train_models); --dead logistic trees --team trees trees-wide,
+    # --grids base wide, --old-ground, --speed-factors 0.9 0.8 or --designs v1 v3 bring back the
+    # comparisons of M11e to M11i.
     parser.add_argument("--dead", nargs="+", default=["trees"], choices=DEAD_KINDS)
     parser.add_argument("--team", nargs="+", default=["trees-wide"], choices=TEAM_KINDS)
     parser.add_argument("--grids", nargs="+", default=["base"], choices=GRIDS,
                         help="decoder grids to search, each a variant of its own")
-    parser.add_argument("--old-ground", action=argparse.BooleanOptionalAction, default=True,
+    parser.add_argument("--old-ground", action=argparse.BooleanOptionalAction, default=False,
                         help="also fit the pipeline on the practice ground before its latest "
                              "change and score it on this run's held-out matches, as the reference")
     parser.add_argument("--reference", default=None,
                         help="the variant the others are set against; by default the first pair "
                              "of kinds on the old ground, or v1+trees-wide+deadtrees without it")
-    parser.add_argument("--speed-factors", nargs="*", type=float, default=list(SPEED_FACTORS),
-                        help="factors the speed check scales the players' speeds by; give none "
-                             "to skip it")
+    parser.add_argument("--speed-factors", nargs="*", type=float, default=[],
+                        help="factors the speed check scales the players' speeds by, for "
+                             "example {}; none skips it".format(
+                                 " ".join("{:g}".format(f) for f in SPEED_FACTORS)))
     parser.add_argument("--seeds", type=int, default=2)
     parser.add_argument("--step", type=int, default=8)
     parser.add_argument("--out-dir", default=os.path.join(ROOT, "models"))
@@ -737,7 +744,9 @@ def main():
     reference = args.reference or (
         variant_name(first, args.dead[0], args.team[0]) + OLD_SUFFIX if args.old_ground
         else "v1+trees-wide+deadtrees")
-    if reference in summaries and len(summaries) > 1:
+    if len(summaries) == 1:
+        print("\none variant fitted ({}): nothing to compare".format(next(iter(summaries))))
+    elif reference in summaries:
         compare(summaries, matches, reference)
     else:
         print("\nno comparison: the reference {} was not fitted in this run".format(reference))

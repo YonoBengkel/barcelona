@@ -90,11 +90,10 @@ manifest as one zip ([kaggle/README.md](kaggle/README.md)). Set the job as `COMM
 notebook cell:
 
 ```bash
-scripts/train_models.py        # fit the models and choose the decoder, match by match, for each
-                               # pair of dead-ball and team model kinds and each decoder grid;
-                               # write models/possession_<variant>.json, set each variant against
-                               # the adopted one by a rule fixed in the code, and print how the
-                               # held-out score moves with slower players (chooses nothing)
+scripts/train_models.py        # refit the frozen model and choose its decoder, match by match,
+                               # into models/possession_v1+trees-wide+deadtrees.json; its options
+                               # set other designs, model kinds, decoder grids and practice
+                               # grounds against it by a rule fixed in the code
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)
