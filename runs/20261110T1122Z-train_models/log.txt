@@ -1,0 +1,71 @@
+commit a244013adca6b953dbcc268ecf16856c6ee436a8
+job scripts/train_models.py --seeds 4
+4 CPUs, 1038 GB free in /tmp
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+........................................................................ [ 80%]
+..................                                                       [100%]
+90 passed in 24.40s
+
+$ /tmp/venv/bin/python scripts/train_models.py --seeds 4
+built rows in 273 s: dead 501344, team 553144
+
+===== design v1: 46 columns =====
+dead trees 300x63 lr 0.05 leaf>=100     logloss 0.0808 AUC 0.9957 acc 0.9700 (no-ball rule 0.7024)
+chosen dead trees 300x63 lr 0.05 leaf>=100 (581 s)
+team trees-wide 600x127 lr 0.05 leaf>=100 logloss 0.2465 AUC 0.9646 acc 0.8993; where a nearest player exists ours 0.9068 vs nearest 0.7462; without one ours 0.8748 (23% of live frames)
+chosen team trees-wide 600x127 lr 0.05 leaf>=100 (1198 s)
+
+held-out evidence of dead trees 300x63 lr 0.05 leaf>=100, team trees-wide 600x127 lr 0.05 leaf>=100 at speed x1 (1362 s so far)
+
+----- v1+trees-wide+deadtrees: dead trees 300x63 lr 0.05 leaf>=100, team trees-wide 600x127 lr 0.05 leaf>=100, decoder grid base (1362 s) -----
+  decoder grid on J03WMX: 12 s so far
+  decoder grid on J03WN1: 23 s so far
+  decoder grid on J03WOH: 34 s so far
+  decoder grid on J03WOY: 45 s so far
+  decoder grid on J03WPY: 57 s so far
+  decoder grid on J03WQQ: 68 s so far
+  decoder grid on J03WR9: 79 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (93 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6693  mF1 0.9118   spellF1 0.6769  mF1 0.9125   spellF1 0.2612  mF1 0.6072
++/-1 s       spellF1 0.6482  mF1 0.9105   spellF1 0.6534  mF1 0.9111   spellF1 0.2610  mF1 0.6066
++/-2 s       spellF1 0.6147  mF1 0.9084   spellF1 0.6132  mF1 0.9086   spellF1 0.2560  mF1 0.6064
+held-out spellF1 per match: J03WMX 0.617, J03WN1 0.634, J03WOH 0.652, J03WOY 0.605, J03WPY 0.683, J03WQQ 0.656, J03WR9 0.706
+settings chosen per match: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x3; {'team_switch': 32, 'dead_switch': 128, 'dead_bias': 0.5} x2; {'team_switch': 32, 'dead_switch': 64, 'dead_bias': 0.5} x1; {'team_switch': 32, 'dead_switch': 128, 'dead_bias': 1.0} x1
+chosen on all seven: {'team_switch': 32, 'dead_switch': 128, 'dead_bias': 0.5}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 23.8-29.8 per 10 min, mean 10.1-14.1 s
+
+errors of the held-out pipeline (M10), labels at +/-1 s
+ball          frames        H        A        D   true D    right      m/s    m/s D m/s live
+seen           59.1%    37.5%    33.8%    28.6%    28.6%    92.6%     1.89     0.97     2.27
+bridged         0.1%    35.0%    42.8%    22.2%    19.1%    86.7%     1.81     1.04     2.01
+gap <=5 s       1.4%    29.6%    35.5%    34.9%    35.9%    87.5%     1.98     1.15     2.35
+gap 5-15 s     10.2%    29.2%    22.4%    48.4%    48.3%    87.3%     1.65     1.20     2.29
+gap >15 s      29.1%    10.3%     9.9%    79.8%    77.2%    93.0%     1.19     1.04     2.27
+all           100.0%    28.6%    25.7%    45.6%    44.8%    92.1%     1.63     1.03     2.27
+          called H  called A  called D
+true H       25.7%      2.7%      0.9%
+true A        2.4%     22.6%      0.9%
+true D        0.5%      0.5%     43.8%
+possessions at IoU 0.5: 2201 true, 1301 matched (59.1%); 1739 predicted, 438 unmatched
+  missed, by cause: wrong team 408 (45%), called dead 88 (10%), split 39 (4%), merged 271 (30%), edges off 94 (10%)
+  matched, by true length: <2 s 12% of 353, 2-5 s 46% of 607, 5-15 s 73% of 815, >=15 s 90% of 426
+  unmatched predictions, by kind: in a stoppage 23 (5%), wrong team 178 (41%), piece of one 237 (54%)
+dead-ball share per match, true/ours: J03WMX 41.5%/42.1%, J03WN1 51.7%/53.8%, J03WOH 47.6%/48.1%, J03WOY 46.5%/46.5%, J03WPY 44.3%/44.4%, J03WQQ 40.7%/41.5%, J03WR9 41.9%/43.3%
+wrote models/possession_v1+trees-wide+deadtrees.json (1456 s so far)
+
+one variant fitted (v1+trees-wide+deadtrees): nothing to compare
+
+done in 1456 s

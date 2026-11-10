@@ -91,6 +91,9 @@ practice ground at ±1 s labels.
   neighbour: up to 1 s for a team's spell and 2 s for a stoppage, beside a lower cost of a change
   of team. The search kept that cost where it was and held a team's spell to at least 1 s:
   +0.0003, better on 2 of 7 matches. Kept in the code as the decoder grid `mindur`, not used.
+- **Twice the training copies**: four degraded copies of every training half instead of two. The
+  frame models improved a little (team log loss 0.2526 to 0.2465), but the decoder then chose a
+  higher `team_switch` and merged more possessions: -0.0016, better on 3 of 7 matches.
 - **0.15 m of player position noise in the simulator.** Once set against the match's player speeds
   it came out at none, which changed the practice ground itself (Section 3).
 
