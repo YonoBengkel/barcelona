@@ -20,8 +20,14 @@ named (all seven by default), and the players' speed percentiles (possession.pro
 the models' speed_all) are set against TARGET_PLAYERS by squared log-ratio; the level with the
 lowest loss is printed, to be copied into DegradeParams.player_noise_m.
 
+--dead-scan moves dead_weight alone along DEAD_WEIGHTS, every other parameter at its default, and
+prints the loss beside the statistics dead_weight should move, and the share of IDSSE's own dead
+frames among the frames hidden in gaps over 15 s. The search above moves every parameter at once,
+which M11h's first run found hardly explores one of them on its own (loss 4.698 to 4.670).
+
     python scripts/calibrate_simulator.py [--samples 80] [--local 120] [MATCH_ID ...]
     python scripts/calibrate_simulator.py --players [MATCH_ID ...]
+    python scripts/calibrate_simulator.py --dead-scan [MATCH_ID ...]
 """
 
 import argparse
@@ -35,6 +41,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from possession import external as ex  # noqa: E402
+from possession.features import FPS, gap_frames  # noqa: E402
 from possession.profile import profile  # noqa: E402
 from possession.simulate import DegradeParams, degrade  # noqa: E402
 
@@ -55,6 +62,7 @@ TARGET = {
 PLAYER_STATES = {"players_seen_p50": "seen", "players_gap_5_15_p50": "gap 5-15 s",
                  "players_gap_15_p50": "gap >15 s"}
 PLAYER_STATE_WEIGHT = 10.0
+DEAD_WEIGHTS = (0.0, 0.5, 1.0, 2.0, 3.0, 4.0)
 SEARCH = {  # parameter: (low, high)
     "line_weight": (0.0, 3.0), "box_weight": (0.0, 3.0), "slow_weight": (0.0, 3.0),
     "crowd_weight": (0.0, 0.8), "dead_weight": (0.0, 4.0), "outside_visible": (0.0, 0.5),
@@ -77,9 +85,17 @@ TARGET_BALL_SPEED = {"p10": 1.01, "p25": 2.37, "p50": 5.08, "p75": 9.54, "p90": 
 BALL_NOISE_GRID = (0.0, 0.05, 0.1, 0.2)
 
 
+def degraded_halves(halves, params):
+    """The halves degraded as the ball's fit sees them: every player tracked, no player noise."""
+    return [degrade(h, replace(params, players_tracked=99.0, player_noise_m=0.0), seed=i)
+            for i, h in enumerate(halves)]
+
+
 def summary(halves, params):
-    degraded = [degrade(h, replace(params, players_tracked=99.0, player_noise_m=0.0), seed=i)
-                for i, h in enumerate(halves)]
+    return summary_of(degraded_halves(halves, params), params)
+
+
+def summary_of(degraded, params):
     p = profile(degraded, params.pitch)
     return {
         "gap_s": {k: p["gap_run_s"].get(k, np.nan) for k in TARGET["gap_s"]},
@@ -113,6 +129,44 @@ def loss(got):
     for key in PLAYER_STATES:
         total += PLAYER_STATE_WEIGHT * np.log(max(got[key], 1e-3) / TARGET[key]) ** 2
     return float(total) if np.isfinite(total) else float("inf")
+
+
+def long_gap_dead_share(halves, degraded, min_s=15.0):
+    """Share of the frames hidden in gaps over min_s seconds that IDSSE itself marks dead."""
+    dead = total = 0
+    for half, out in zip(halves, degraded):
+        present = ~np.isnan(out["ball_x"])
+        hidden = ~present & (gap_frames(present)[2] / FPS > min_s)
+        dead += int(np.sum(~half["alive"][hidden]))
+        total += int(hidden.sum())
+    return dead / total if total else float("nan")
+
+
+def dead_scan(halves):
+    """(best dead_weight, its loss) along DEAD_WEIGHTS, every other parameter at its default,
+    printing what dead_weight should move."""
+    print("dead_weight alone, every other parameter at its default")
+    print("  {:>11} {:>7}  players' median m/s: seen, gap 5-15 s, gap >15 s   ball before a gap   "
+          "near a line before   dead in gaps >15 s".format("dead_weight", "loss"))
+    best = (None, float("inf"))
+    for weight in DEAD_WEIGHTS:
+        params = replace(DegradeParams(), dead_weight=weight)
+        degraded = degraded_halves(halves, params)
+        got = summary_of(degraded, params)
+        value = loss(got)
+        print("  {:>11.1f} {:>7.3f}  {:>21.2f} {:>9.2f} {:>10.2f}   {:>12.2f} m/s   {:>18.3f}   "
+              "{:>18.1%}".format(weight, value, got["players_seen_p50"],
+                                 got["players_gap_5_15_p50"], got["players_gap_15_p50"],
+                                 got["speed_before_gap_p50"], got["near_line_before"],
+                                 long_gap_dead_share(halves, degraded)))
+        if value < best[1]:
+            best = (weight, value)
+    print("  {:>11} {:>7}  {:>21.2f} {:>9.2f} {:>10.2f}   {:>12.2f} m/s   {:>18.3f}".format(
+        "match", "", TARGET["players_seen_p50"], TARGET["players_gap_5_15_p50"],
+        TARGET["players_gap_15_p50"], TARGET["speed_before_gap_p50"],
+        TARGET["near_line_before"]))
+    print("best dead_weight {:.1f} (loss {:.3f})".format(*best))
+    return best
 
 
 def player_summary(halves, params):
@@ -182,6 +236,8 @@ def main():
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--players", action="store_true",
                         help="fit the players' position noise to TARGET_PLAYERS instead (M11g)")
+    parser.add_argument("--dead-scan", action="store_true",
+                        help="move dead_weight alone, the rest at the defaults (M11h)")
     parser.add_argument("matches", nargs="*")
     args = parser.parse_args()
     matches = args.matches or (sorted(ex.MATCHES) if args.players
@@ -195,6 +251,10 @@ def main():
         print("{} halves of {}".format(len(halves), ", ".join(matches)))
         fit_players(halves, TARGET_PLAYERS)
         ball_noise_report(halves)
+        return 0
+    if args.dead_scan:
+        print("{} halves of {}".format(len(halves), ", ".join(matches)))
+        dead_scan(halves)
         return 0
 
     rng = np.random.default_rng(args.seed)

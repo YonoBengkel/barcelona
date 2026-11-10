@@ -43,6 +43,17 @@ def test_the_ball_fit_weighs_the_players_speed_by_ball_state():
     assert set(got) == set(calibrate.TARGET)  # every target has its degraded side
 
 
+def test_dead_weight_puts_the_long_gaps_at_stoppages():
+    half = standing_half(n=40000)
+    half["alive"] = np.arange(40000) % 4000 >= 2000  # 80 s stopped, then 80 s of play, in turn
+    shares = []
+    for weight in (0.0, 4.0):
+        params = replace(DegradeParams(), dead_weight=weight)
+        shares.append(calibrate.long_gap_dead_share(
+            [half], calibrate.degraded_halves([half], params)))
+    assert 0.0 <= shares[0] < shares[1] <= 1.0
+
+
 def test_without_a_target_the_fit_only_reports(capsys):
     best, value = calibrate.fit_players([standing_half(n=1000)])
     assert best is None and value == float("inf")
