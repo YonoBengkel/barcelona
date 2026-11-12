@@ -5,7 +5,8 @@ Sports, FC Barcelona and Mobile World Capital Barcelona). For every frame of the
 FC Barcelona vs Athletic Club, say whether the home side has the ball (`H`), the away side has it
 (`A`), the ball is dead (`D`), or the system declines to answer (`X`).
 
-> **Status: model frozen on 10 November 2026**, submission due 17 November. Scope and milestones
+> **Status: model adopted on 12 November 2026** (a temporal convolutional network, which replaced
+> the trees frozen on 10 November), submission due 17 November. Scope and milestones
 > are in [PRD.md](PRD.md), the design in [ARCHITECTURE.md](ARCHITECTURE.md), and the approach,
 > data, rules, results and limitations in the technical document, [TECHNICAL.md](TECHNICAL.md).
 
@@ -49,7 +50,7 @@ It applies `models/possession_v1+tcn.json`, a temporal convolutional network tha
 `scripts/train_tcn.py` fits on public data from other matches (see [kaggle/](kaggle/README.md))
 and that numpy alone applies, and prints aggregates only,
 including the file's SHA-256 for comparing runs. The file we submit, `BasahKuyups.csv`, is this
-output renamed: SHA-256 `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
+output renamed: SHA-256 `17b2110c78b534d682e9c22f75e74b75f6e2b64e4f13e4d2b212499f7ed27432`.
 To check the data bundle, the frame alignment
 and the environment in one go, this rebuilds the organisers' four baselines and confirms they
 match the committed ones:

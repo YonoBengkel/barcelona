@@ -6,8 +6,8 @@ positions alone), `models` (logistic regressions and gradient-boosted trees for 
 team calls, both applied with numpy alone),
 `decode` (the three-state hidden Markov model and its Viterbi decoder), `submission` (the CSV
 writer) and `diagnose` (errors by ball state and by possession); M11l's two candidates, `tcn` (a
-temporal convolutional network applied with numpy alone) and `stacking` (a stage two of trees on
-the first stage's log-odds), which the frozen model does not use; the scripts under "How to run";
+temporal convolutional network applied with numpy alone, adopted on 2026-11-12) and `stacking` (a
+stage two of trees on the first stage's log-odds, not adopted); the scripts under "How to run";
 and the Kaggle runner in `kaggle/`. Rewrite this file from the code as later milestones land.
 
 # Architecture
@@ -40,7 +40,7 @@ per-frame evidence: log-probability of H, A, D
    │  H <-> A and dead_switch for each stoppage; dead_bias shifts the D evidence. The three
    │  numbers sit in the model file beside the models. Two optional ones, team_min and
    │  dead_min, hold every spell to a minimum length in frames (M11j's 'mindur' grid; the
-   │  frozen model has neither)
+   │  adopted model has neither)
    ▼
 labels per graded half ──► possession.submission: X outside the graded halves, LF line endings
    │  scripts/make_submission.py validates the file with possession_metrics.validate_submission
@@ -107,17 +107,18 @@ scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggre
 scripts/feature_report.py      # signal of each feature (ROC AUC)
 scripts/simulate_report.py     # IDSSE profile before and after degradation
 scripts/idsse_label_report.py  # raw against aligned possession statistics
-scripts/train_stacking.py      # M11l: a stage two of trees against the frozen pipeline
+scripts/train_stacking.py      # M11l: a stage two of trees against the trees (not adopted)
 scripts/train_tcn.py           # M11l: a temporal convolutional network, alone and beside the
                                # trees, against them; writes models/possession_v1+tcn.json, the
                                # adopted model. Needs the GPU accelerator, and the runner
                                # installs PyTorch for it from requirements-torch.txt
 ```
 
-M11l's candidates are set against the frozen pipeline by the same rule, at the held-out seed and
-again at a second one. `possession.models.scores` applies whichever models a file holds: the
-trees alone (the frozen file, unchanged), a network (`possession.tcn`), both averaged, or a
-stage two on top (`possession.stacking`). All of them run with numpy alone at submission time.
+M11l's candidates were set against the trees frozen in M12 by the same rule, at the held-out seed
+and again at a second one; the network alone was adopted. `possession.models.scores` applies
+whichever models a file holds: the trees alone (the frozen file, unchanged), a network
+(`possession.tcn`), both averaged, or a stage two on top (`possession.stacking`). All of them run
+with numpy alone at submission time.
 
 Jobs that read the match data run on the team's laptop only, and print aggregates only:
 
