@@ -27,6 +27,11 @@ The held-out log-odds come from possession.tcn.scores, the numpy code the submis
 fitted on all seven matches and both candidates are written to models/possession_<name>.json,
 whatever the verdict. A file is committed only if adopted.
 
+The run of 2026-11-12 (Kaggle version 29) kept the single network. The ensemble gained +0.0096 at
++/-1 s at EVAL_SEED but was better on only 4 of 7 matches (+0.0104 with the wide grid, 4 of 7 as
+well), and +0.0107 on 5 of 7 at the confirmation seed. The reference reproduced M11l's network's
+held-out scores exactly. The run's model files are not committed.
+
 Public data only; reads no match data. A job for Kaggle with a GPU (kaggle/README.md); the runner
 installs PyTorch for it from requirements-torch.txt. Nothing the submission runs needs PyTorch.
 

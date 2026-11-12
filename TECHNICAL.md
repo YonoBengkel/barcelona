@@ -114,6 +114,12 @@ practice ground at ±1 s labels.
 - **The trees and the network averaged** passed the rule twice as well: 0.678, and 0.682 on the
   second degradation. The rule fixed before the run takes the candidate higher on the first, the
   network alone at 0.680.
+- **Five networks averaged**, differing only in the seed of their fitting, against the one network:
+  +0.0096, but better on only 4 of 7 matches, most of the gain coming from two of them. Allowing
+  `dead_bias` up to 3.0 as well gave +0.0104, again on 4 of 7. On a fresh degradation of the
+  held-out matches, used by no earlier run, both gained +0.0107, on 5 of 7. Frame by frame the
+  average was clearly better (team log loss 0.2868 to 0.2654). But the rule asks for a gain on
+  most matches, so the single network stayed.
 - **0.15 m of player position noise in the simulator.** Once set against the match's player speeds
   it came out at none, which changed the practice ground itself (Section 3).
 
@@ -193,6 +199,7 @@ Held-out over the seven matches, nested as in Section 1, labels at ±1 s:
 | The previous line's pipeline, fitted on the earlier ground, scored on the recalibrated one | 0.539 | 0.840 |
 | The previous submission with a stage two of trees on its log-odds | 0.651 | 0.912 |
 | The trees and the network averaged | 0.678 | 0.921 |
+| Five networks averaged (not adopted: better on only 4 of 7 matches) | 0.690 | 0.924 |
 | The network in place of the trees: **submitted** | **0.680** | **0.918** |
 
 - The submitted pipeline scores 0.686 at ±0.5 s and 0.654 at ±2 s, and between 0.647 and 0.707 per
@@ -259,8 +266,9 @@ check we can make falls where the practice ground predicts:
     way to weigh them without labels on this match;
   - give the decoder a fuller model of how long possessions last: holding every spell to a
     minimum, the simplest such model, gained almost nothing (Section 2);
-  - fit the network on more matches, and choose between it alone and its average with the trees,
-    which did as well on the second degradation, on more than seven.
+  - fit the network on more matches, and decide there on an ensemble of networks (ahead on
+    average here, but not on most matches) and on its average with the trees (ahead on the second
+    degradation).
 
 ## 7. Reproduction
 
@@ -301,8 +309,9 @@ python scripts/train_tcn.py        # the network and its comparison, about 70 mi
 ```
 
 - The refit needs PyTorch (`requirements-torch.txt`), which nothing at submission time uses. A
-  refit on other hardware may differ in the last bits of the weights; the submission is reproduced
-  from the committed weights.
+  later refit on the same kind of GPU, a T4, gave exactly the same held-out scores. A refit on
+  other hardware may differ in the last bits of the weights; the submission is reproduced from the
+  committed weights.
 - `python scripts/train_models.py` refits the trees, in about 25 minutes on 4 CPUs.
 - We ran every refit on Kaggle through [kaggle/](kaggle/README.md). Each run's log and manifest
   (commit, versions, output digests) are in `runs/`.

@@ -113,7 +113,7 @@ scripts/train_tcn.py           # M11l: a temporal convolutional network, alone a
                                # adopted model. Needs the GPU accelerator, and the runner
                                # installs PyTorch for it from requirements-torch.txt
 scripts/train_tcn_ensemble.py  # M11m: an ensemble of networks against the adopted one, the same
-                               # way; GPU and PyTorch as above
+                               # way (not adopted); GPU and PyTorch as above
 ```
 
 M11l's candidates were set against the trees frozen in M12 by the same rule, at the held-out seed
