@@ -199,13 +199,16 @@ def scores(models, X):
     it always gave. M11l's candidates add a temporal convolutional network, 'tcn'
     (possession.tcn), alone or averaged with the trees, and a stage two, 'stack'
     (possession.stacking), which corrects the log-odds from how they move around each frame.
+    M11m's 'tcn' may be a list of networks, an ensemble whose log-odds are averaged in order; a
+    single network gives exactly its own numbers.
     """
     parts = []
     if "dead" in models:
         parts.append((score(models["dead"], X), score(models["team"], X)))
     if "tcn" in models:
         from possession import tcn
-        parts.append(tcn.scores(models["tcn"], X))
+        networks = models["tcn"] if isinstance(models["tcn"], list) else [models["tcn"]]
+        parts.append(combine([tcn.scores(network, X) for network in networks]))
     if not parts:
         raise ValueError("the models hold neither trees nor a network")
     dead, home = combine(parts)
@@ -244,9 +247,11 @@ def load(path):
     if "dead" not in models and "tcn" not in models:
         raise ValueError("the models hold neither trees nor a network")
     for name in ("dead", "team", "tcn"):
-        if name in models and tuple(models[name]["names"]) != design_names(version):
-            raise ValueError("{} model was fitted on other features than this code computes"
-                             .format(name))
+        entries = models.get(name, [])
+        for entry in entries if isinstance(entries, list) else [entries]:
+            if tuple(entry["names"]) != design_names(version):
+                raise ValueError("{} model was fitted on other features than this code computes"
+                                 .format(name))
     if "stack" in models:
         from possession import stacking
         if tuple(models["stack"]["names"]) != stacking.names():

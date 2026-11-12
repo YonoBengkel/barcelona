@@ -36,7 +36,8 @@ PYTHON = os.path.join(VENV, "bin", "python")
 PYTHON_VERSION = "3.12.4"
 RESULTS = "/kaggle/working/kaggle-results.zip"
 # Requirements a job needs beyond requirements.txt, which the submission alone needs (M11l).
-EXTRA_REQUIREMENTS = {"scripts/train_tcn.py": "requirements-torch.txt"}
+EXTRA_REQUIREMENTS = {"scripts/train_tcn.py": "requirements-torch.txt",
+                      "scripts/train_tcn_ensemble.py": "requirements-torch.txt"}
 
 
 class Log:
