@@ -1,0 +1,181 @@
+commit b0002dc909fa1e6926327a4e3c41df9a7e9d6d2b
+job scripts/train_stacking.py
+4 CPUs, 1038 GB free in /tmp, GPU none
+
+$ /usr/bin/python3 -m pip install --quiet uv
+
+$ /usr/bin/python3 -m uv venv --quiet --python 3.12.4 /tmp/venv
+
+$ /usr/bin/python3 -m uv pip install --quiet --python /tmp/venv/bin/python -r requirements.txt
+
+$ /tmp/venv/bin/python scripts/fetch_idsse.py
+IDSSE mirror at a715a38dfbaf: 21 files fetched, 0 already intact
+
+$ /tmp/venv/bin/python -m pytest -q -p no:cacheprovider
+........................................................................ [ 67%]
+..................sss.............                                       [100%]
+103 passed, 3 skipped in 36.82s
+
+$ /tmp/venv/bin/python scripts/train_stacking.py
+built rows and whole halves in 421 s: dead 250672, team 276572, 28 training halves
+dead trees 300x63 lr 0.05 leaf>=100     logloss 0.0829 AUC 0.9956 acc 0.9689 (no-ball rule 0.7024)
+chosen dead trees 300x63 lr 0.05 leaf>=100 (669 s)
+team trees-wide 600x127 lr 0.05 leaf>=100 logloss 0.2526 AUC 0.9640 acc 0.8985; where a nearest player exists ours 0.9056 vs nearest 0.7462; without one ours 0.8754 (23% of live frames)
+chosen team trees-wide 600x127 lr 0.05 leaf>=100 (1108 s)
+the first stage's held-out log-odds at seeds 99 and 98 (1690 s so far)
+stage two held out on J03WMX: fitted on 12 training halves of the other matches; 6 of 21 first stages fitted without a pair of matches (870 s; 2560 s so far)
+stage two held out on J03WN1: fitted on 12 training halves of the other matches; 11 of 21 first stages fitted without a pair of matches (723 s; 3283 s so far)
+stage two held out on J03WOH: fitted on 12 training halves of the other matches; 15 of 21 first stages fitted without a pair of matches (596 s; 3879 s so far)
+stage two held out on J03WOY: fitted on 12 training halves of the other matches; 18 of 21 first stages fitted without a pair of matches (455 s; 4334 s so far)
+stage two held out on J03WPY: fitted on 12 training halves of the other matches; 20 of 21 first stages fitted without a pair of matches (319 s; 4652 s so far)
+stage two held out on J03WQQ: fitted on 12 training halves of the other matches; 21 of 21 first stages fitted without a pair of matches (188 s; 4840 s so far)
+stage two held out on J03WR9: fitted on 12 training halves of the other matches; 21 of 21 first stages fitted without a pair of matches (47 s; 4887 s so far)
+
+held-out frame calls, halves degraded with seed 99
+dead stage one                          logloss 0.0829 AUC 0.9956 acc 0.9689 (no-ball rule 0.7024)
+team stage one                          logloss 0.2526 AUC 0.9640 acc 0.8985; where a nearest player exists ours 0.9056 vs nearest 0.7462; without one ours 0.8754 (23% of live frames)
+dead stage two                          logloss 0.0706 AUC 0.9968 acc 0.9728 (no-ball rule 0.7024)
+team stage two                          logloss 0.2313 AUC 0.9673 acc 0.9034; where a nearest player exists ours 0.9085 vs nearest 0.7462; without one ours 0.8871 (23% of live frames)
+
+held-out frame calls, halves degraded with seed 98
+dead stage one                          logloss 0.0828 AUC 0.9955 acc 0.9693 (no-ball rule 0.7017)
+team stage one                          logloss 0.2504 AUC 0.9645 acc 0.8997; where a nearest player exists ours 0.9093 vs nearest 0.7507; without one ours 0.8686 (23% of live frames)
+dead stage two                          logloss 0.0695 AUC 0.9969 acc 0.9735 (no-ball rule 0.7017)
+team stage two                          logloss 0.2288 AUC 0.9680 acc 0.9036; where a nearest player exists ours 0.9117 vs nearest 0.7507; without one ours 0.8773 (23% of live frames)
+
+----- v1+trees-wide+deadtrees, held-out halves degraded with seed 99 (4892 s so far) -----
+  decoder grid on J03WMX: 21 s so far
+  decoder grid on J03WN1: 41 s so far
+  decoder grid on J03WOH: 60 s so far
+  decoder grid on J03WOY: 80 s so far
+  decoder grid on J03WPY: 101 s so far
+  decoder grid on J03WQQ: 121 s so far
+  decoder grid on J03WR9: 141 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (158 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6665  mF1 0.9111   spellF1 0.6685  mF1 0.9121   spellF1 0.2612  mF1 0.6072
++/-1 s       spellF1 0.6498  mF1 0.9103   spellF1 0.6517  mF1 0.9113   spellF1 0.2610  mF1 0.6066
++/-2 s       spellF1 0.6177  mF1 0.9081   spellF1 0.6196  mF1 0.9090   spellF1 0.2560  mF1 0.6064
+held-out spellF1 per match: J03WMX 0.616, J03WN1 0.648, J03WOH 0.644, J03WOY 0.609, J03WPY 0.684, J03WQQ 0.668, J03WR9 0.694
+settings chosen per match: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x5; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.0} x1; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 1.0} x1
+chosen on all seven: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 23.8-30.5 per 10 min, mean 9.1-13.9 s
+
+errors of the held-out pipeline (M10), labels at +/-1 s
+ball          frames        H        A        D   true D    right      m/s    m/s D m/s live
+seen           59.1%    37.5%    33.8%    28.6%    28.6%    92.6%     1.89     0.97     2.27
+bridged         0.1%    33.6%    44.4%    22.0%    19.1%    86.7%     1.81     1.04     2.01
+gap <=5 s       1.4%    31.7%    34.7%    33.6%    35.9%    85.5%     1.98     1.15     2.35
+gap 5-15 s     10.2%    28.5%    23.3%    48.2%    48.3%    88.1%     1.65     1.20     2.29
+gap >15 s      29.1%    10.0%    10.0%    80.1%    77.2%    92.8%     1.19     1.04     2.27
+all           100.0%    28.5%    25.8%    45.7%    44.8%    92.1%     1.63     1.03     2.27
+          called H  called A  called D
+true H       25.7%      2.7%      0.9%
+true A        2.4%     22.6%      1.0%
+true D        0.5%      0.5%     43.8%
+possessions at IoU 0.5: 2201 true, 1353 matched (61.5%); 1834 predicted, 481 unmatched
+  missed, by cause: wrong team 394 (46%), called dead 88 (10%), split 34 (4%), merged 238 (28%), edges off 94 (11%)
+  matched, by true length: <2 s 16% of 353, 2-5 s 50% of 607, 5-15 s 74% of 815, >=15 s 90% of 426
+  unmatched predictions, by kind: in a stoppage 28 (6%), wrong team 205 (43%), piece of one 248 (52%)
+dead-ball share per match, true/ours: J03WMX 41.5%/41.6%, J03WN1 51.7%/53.5%, J03WOH 47.6%/47.7%, J03WOY 46.5%/46.7%, J03WPY 44.3%/44.7%, J03WQQ 40.7%/41.5%, J03WR9 41.9%/44.4%
+
+----- v1+trees-wide+deadtrees+stack, held-out halves degraded with seed 99 (5051 s so far) -----
+  decoder grid on J03WMX: 21 s so far
+  decoder grid on J03WN1: 41 s so far
+  decoder grid on J03WOH: 61 s so far
+  decoder grid on J03WOY: 82 s so far
+  decoder grid on J03WPY: 103 s so far
+  decoder grid on J03WQQ: 126 s so far
+  decoder grid on J03WR9: 150 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (169 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6734  mF1 0.9126   spellF1 0.6750  mF1 0.9129   spellF1 0.2612  mF1 0.6072
++/-1 s       spellF1 0.6513  mF1 0.9116   spellF1 0.6529  mF1 0.9119   spellF1 0.2610  mF1 0.6066
++/-2 s       spellF1 0.6135  mF1 0.9089   spellF1 0.6149  mF1 0.9091   spellF1 0.2560  mF1 0.6064
+held-out spellF1 per match: J03WMX 0.617, J03WN1 0.644, J03WOH 0.652, J03WOY 0.614, J03WPY 0.687, J03WQQ 0.663, J03WR9 0.696
+settings chosen per match: {'team_switch': 8, 'dead_switch': 64, 'dead_bias': 0.5} x6; {'team_switch': 8, 'dead_switch': 64, 'dead_bias': 0.0} x1
+chosen on all seven: {'team_switch': 8, 'dead_switch': 64, 'dead_bias': 0.5}  AT THE EDGE OF THE GRID: team_switch lower; widen it
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 22.7-28.0 per 10 min, mean 9.9-14.5 s
+
+errors of the held-out pipeline (M10), labels at +/-1 s
+ball          frames        H        A        D   true D    right      m/s    m/s D m/s live
+seen           59.1%    37.4%    33.7%    28.8%    28.6%    92.6%     1.89     0.97     2.27
+bridged         0.1%    34.4%    43.1%    22.5%    19.1%    87.5%     1.81     1.04     2.01
+gap <=5 s       1.4%    30.6%    35.0%    34.4%    35.9%    88.1%     1.98     1.15     2.35
+gap 5-15 s     10.2%    28.9%    23.1%    48.0%    48.3%    88.4%     1.65     1.20     2.29
+gap >15 s      29.1%    10.1%     9.7%    80.3%    77.2%    93.0%     1.19     1.04     2.27
+all           100.0%    28.5%    25.7%    45.8%    44.8%    92.2%     1.63     1.03     2.27
+          called H  called A  called D
+true H       25.7%      2.7%      0.9%
+true A        2.4%     22.6%      1.0%
+true D        0.4%      0.4%     44.0%
+possessions at IoU 0.5: 2201 true, 1307 matched (59.4%); 1707 predicted, 400 unmatched
+  missed, by cause: wrong team 413 (46%), called dead 85 (10%), split 28 (3%), merged 275 (31%), edges off 93 (10%)
+  matched, by true length: <2 s 10% of 353, 2-5 s 46% of 607, 5-15 s 74% of 815, >=15 s 90% of 426
+  unmatched predictions, by kind: in a stoppage 17 (4%), wrong team 170 (42%), piece of one 213 (53%)
+dead-ball share per match, true/ours: J03WMX 41.5%/41.8%, J03WN1 51.7%/53.8%, J03WOH 47.6%/48.6%, J03WOY 46.5%/46.8%, J03WPY 44.3%/45.0%, J03WQQ 40.7%/41.0%, J03WR9 41.9%/44.1%
+
+----- v1+trees-wide+deadtrees, held-out halves degraded with seed 98 (5221 s so far) -----
+  decoder grid on J03WMX: 22 s so far
+  decoder grid on J03WN1: 43 s so far
+  decoder grid on J03WOH: 63 s so far
+  decoder grid on J03WOY: 84 s so far
+  decoder grid on J03WPY: 104 s so far
+  decoder grid on J03WQQ: 124 s so far
+  decoder grid on J03WR9: 144 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (161 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6610  mF1 0.9101   spellF1 0.6666  mF1 0.9113   spellF1 0.2551  mF1 0.6074
++/-1 s       spellF1 0.6494  mF1 0.9098   spellF1 0.6548  mF1 0.9110   spellF1 0.2579  mF1 0.6077
++/-2 s       spellF1 0.6229  mF1 0.9088   spellF1 0.6281  mF1 0.9101   spellF1 0.2535  mF1 0.6068
+held-out spellF1 per match: J03WMX 0.621, J03WN1 0.621, J03WOH 0.659, J03WOY 0.621, J03WPY 0.670, J03WQQ 0.662, J03WR9 0.710
+settings chosen per match: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5} x5; {'team_switch': 16, 'dead_switch': 128, 'dead_bias': -0.5} x2
+chosen on all seven: {'team_switch': 16, 'dead_switch': 128, 'dead_bias': 0.5}
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 25.0-31.9 per 10 min, mean 8.7-13.7 s
+
+----- v1+trees-wide+deadtrees+stack, held-out halves degraded with seed 98 (5382 s so far) -----
+  decoder grid on J03WMX: 20 s so far
+  decoder grid on J03WN1: 40 s so far
+  decoder grid on J03WOH: 59 s so far
+  decoder grid on J03WOY: 79 s so far
+  decoder grid on J03WPY: 99 s so far
+  decoder grid on J03WQQ: 119 s so far
+  decoder grid on J03WR9: 139 s so far
+
+decoder: 245 settings of team_switch, dead_switch, dead_bias, each match's chosen on the other six; C was chosen once on all seven (156 s)
+labels                   ours, held out       ours, set on all seven            baseline_smooth50
++/-0.5 s     spellF1 0.6726  mF1 0.9135   spellF1 0.6748  mF1 0.9139   spellF1 0.2551  mF1 0.6074
++/-1 s       spellF1 0.6543  mF1 0.9130   spellF1 0.6561  mF1 0.9133   spellF1 0.2579  mF1 0.6077
++/-2 s       spellF1 0.6157  mF1 0.9111   spellF1 0.6173  mF1 0.9115   spellF1 0.2535  mF1 0.6068
+held-out spellF1 per match: J03WMX 0.636, J03WN1 0.620, J03WOH 0.679, J03WOY 0.612, J03WPY 0.692, J03WQQ 0.668, J03WR9 0.692
+settings chosen per match: {'team_switch': 8, 'dead_switch': 32, 'dead_bias': -0.5} x4; {'team_switch': 8, 'dead_switch': 64, 'dead_bias': 0.0} x3
+chosen on all seven: {'team_switch': 8, 'dead_switch': 32, 'dead_bias': -0.5}  AT THE EDGE OF THE GRID: team_switch lower; widen it
+possessions, labels: 26.5-37.5 per 10 min, mean 7.7-13.2 s
+possessions, ours: 23.0-28.7 per 10 min, mean 9.8-14.8 s
+
+===== the adoption rule on the held-out halves of seed 99 =====
+
+v1+trees-wide+deadtrees+stack against v1+trees-wide+deadtrees, held out: spellF1 +0.0015 at +/-1 s (+0.0069 at 0.5 s, -0.0042 at 2 s), macroF1 +0.0014; better on 5 of 7 matches
+  per match: J03WMX +0.001, J03WN1 -0.004, J03WOH +0.009, J03WOY +0.006, J03WPY +0.003, J03WQQ -0.005, J03WR9 +0.002
+  adoption rule (spellF1 +0.01 or more at 1 s, better on 5 or more matches, no loss at 0.5 s or 2 s, macroF1 down 0.005 at most): keep v1+trees-wide+deadtrees
+
+verdict: keep v1+trees-wide+deadtrees
+
+===== the adoption rule on the held-out halves of seed 98 =====
+
+v1+trees-wide+deadtrees+stack against v1+trees-wide+deadtrees, held out: spellF1 +0.0049 at +/-1 s (+0.0116 at 0.5 s, -0.0072 at 2 s), macroF1 +0.0032; better on 4 of 7 matches
+  per match: J03WMX +0.015, J03WN1 -0.001, J03WOH +0.020, J03WOY -0.009, J03WPY +0.021, J03WQQ +0.006, J03WR9 -0.017
+  adoption rule (spellF1 +0.01 or more at 1 s, better on 5 or more matches, no loss at 0.5 s or 2 s, macroF1 down 0.005 at most): keep v1+trees-wide+deadtrees
+
+verdict: keep v1+trees-wide+deadtrees
+
+M11l stacking verdict: keep v1+trees-wide+deadtrees (seed 99: spellF1 0.6513 against 0.6498, fails; seed 98: spellF1 0.6543 against 0.6494, fails)
+wrote models/possession_v1+trees-wide+deadtrees+stack.json (5851 s so far)
+
+done in 5851 s

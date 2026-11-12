@@ -26,11 +26,14 @@ per-frame arrays: ball xy or NaN · object xy · team
    ▼
 per-frame features ──► possession.models.design: log scale for skewed features, plus rolling
    │  means over 2.5-5 s for context
-   │  possession.models.log_state_probabilities: P(dead) and P(home | alive), each from
-   │  gradient-boosted trees, both in models/possession_v1+trees-wide+deadtrees.json and both
-   │  applied with numpy alone, tree by tree in a fixed order (a logistic regression, the other
-   │  kind the code supports, is summed column by column), so the result does not depend on the
-   │  CPU's BLAS
+   │  possession.models.log_state_probabilities: P(dead) and P(home | alive) from
+   │  possession.models.scores. Since M11l (2026-11-12) both come from a temporal convolutional
+   │  network (possession.tcn) in models/possession_v1+tcn.json, which reads the design columns
+   │  over about 10 s either side of the frame. It is applied with numpy alone, summed tap by tap
+   │  and input by input in a fixed order, so the result does not depend on the CPU's BLAS. The
+   │  previous model, gradient-boosted trees for both calls
+   │  (models/possession_v1+trees-wide+deadtrees.json), is walked tree by tree in a fixed order,
+   │  and a logistic regression is summed column by column
    ▼
 per-frame evidence: log-probability of H, A, D
    │  possession.decode: three-state hidden Markov model, Viterbi. A path pays team_switch for
@@ -94,10 +97,11 @@ manifest as one zip ([kaggle/README.md](kaggle/README.md)). Set the job as `COMM
 notebook cell:
 
 ```bash
-scripts/train_models.py        # refit the frozen model and choose its decoder, match by match,
-                               # into models/possession_v1+trees-wide+deadtrees.json; its options
-                               # set other designs, model kinds, decoder grids and practice
-                               # grounds against it by a rule fixed in the code
+scripts/train_models.py        # refit the trees (the previous model, M12) and choose their
+                               # decoder, match by match, into
+                               # models/possession_v1+trees-wide+deadtrees.json; its options set
+                               # other designs, model kinds, decoder grids and practice grounds
+                               # against it by a rule fixed in the code
 scripts/eval_external.py       # score predictors on the practice ground
 scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggregates in the code)
 scripts/feature_report.py      # signal of each feature (ROC AUC)
@@ -105,7 +109,8 @@ scripts/simulate_report.py     # IDSSE profile before and after degradation
 scripts/idsse_label_report.py  # raw against aligned possession statistics
 scripts/train_stacking.py      # M11l: a stage two of trees against the frozen pipeline
 scripts/train_tcn.py           # M11l: a temporal convolutional network, alone and beside the
-                               # trees, against it; needs the GPU accelerator, and the runner
+                               # trees, against them; writes models/possession_v1+tcn.json, the
+                               # adopted model. Needs the GPU accelerator, and the runner
                                # installs PyTorch for it from requirements-torch.txt
 ```
 
@@ -131,10 +136,10 @@ every file's size and digest. The first read of an IDSSE match parses its XML (a
 laptop) and caches the arrays under `external/idsse/cache/`; later reads take a fraction of a
 second.
 
-`scripts/make_submission.py` applies `models/possession_v1+trees-wide+deadtrees.json` (adopted on
-2026-11-09 by the rule in `scripts/train_models.py`; `--models` picks another file). The file
-must carry a `decoder` section, written by a Kaggle run of `scripts/train_models.py`; without one
-the script stops before it reads the match.
+`scripts/make_submission.py` applies `models/possession_v1+tcn.json` (adopted on 2026-11-12 by
+the rule in `scripts/train_tcn.py`; `--models` picks another file, such as the previous trees).
+The file must carry a `decoder` section, written by a Kaggle run of `scripts/train_tcn.py` or
+`scripts/train_models.py`; without one the script stops before it reads the match.
 
 ## Application layers
 

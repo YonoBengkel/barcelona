@@ -101,6 +101,54 @@ def test_a_valid_file_and_aggregates_only(tmp_path, monkeypatch, capsys):
     assert "public five minutes" in printed and "SHA-256" in printed
 
 
+def test_the_default_model_is_the_adopted_network():
+    models = make_submission.DEFAULT_MODELS
+    assert os.path.basename(models) == "possession_v1+tcn.json" and os.path.isfile(models)
+
+
+def test_a_network_model_file_makes_a_valid_file_too(tmp_path, monkeypatch, capsys):
+    """The adopted model is a network (possession.tcn): the same run, with one of random weights."""
+    rng = np.random.default_rng(2)
+    data = tmp_path / "data" / "tactical"
+    data.mkdir(parents=True)
+    (data / "BAR-ATH_tactical_atd.xml").write_text(META)
+    (data / "BAR-ATH_tactical_atd.txt").write_text(raw_tracking(rng))
+    offset = 1000
+    monkeypatch.setattr(games, "DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setitem(games.GAMES, "BAR-ATH", dict(
+        games.GAMES["BAR-ATH"], n_video_frames=N_FRAMES, offsets={1: offset, 2: offset},
+        halves={1: (BLOCKS[0][0] + offset, BLOCKS[0][1] + offset),
+                2: (BLOCKS[1][0] + offset, BLOCKS[1][1] + offset)}))
+
+    def layer(outputs, inputs, taps):
+        return {"weight": rng.normal(0, 0.3, (outputs, inputs, taps)).tolist(),
+                "bias": rng.normal(0, 0.1, outputs).tolist()}
+
+    columns, channels = len(DESIGN_NAMES), 4
+    network = {"kind": "tcn", "names": list(DESIGN_NAMES), "mean": [0.0] * columns,
+               "scale": [1.0] * columns, "input": layer(channels, 2 * columns, 1),
+               "blocks": [{"dilation": d, "dilated": layer(channels, channels, 3),
+                           "pointwise": layer(channels, channels, 1)} for d in (1, 2)],
+               "output": layer(2, channels, 1)}
+    models_path = str(tmp_path / "network.json")
+    save({"design": "v1", "tcn": network,
+          "decoder": {"team_switch": 8, "dead_switch": 8, "dead_bias": 0.0},
+          "fitted_on": {}}, models_path)
+    gt = ["X"] * N_FRAMES
+    gt[100:200] = ["H"] * 100
+    gt_path = tmp_path / "gt.csv"
+    gt_path.write_text("frame,label\n" + "".join("{},{}\n".format(i, l) for i, l in enumerate(gt)))
+    monkeypatch.setattr(make_submission, "PUBLIC_GT", str(gt_path))
+    out = str(tmp_path / "submission.csv")
+    monkeypatch.setattr(sys, "argv", ["make_submission.py", "--out", out, "--models", models_path])
+
+    assert make_submission.run_safely(make_submission.main) == 0
+    with open(out) as handle:
+        labels = [line.split(",")[1] for line in handle.read().splitlines()[1:]]
+    assert len(labels) == N_FRAMES and set(labels) <= set("HADX")
+    assert "SHA-256" in capsys.readouterr().out
+
+
 def test_a_model_file_without_a_decoder_stops_before_reading_the_match(tmp_path, monkeypatch,
                                                                        capsys):
     X = np.random.default_rng(1).normal(size=(200, len(DESIGN_NAMES)))

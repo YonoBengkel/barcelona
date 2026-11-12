@@ -4,10 +4,10 @@
 
 The one command that turns the match's tracking into the file the organisers score. It reads the
 tactical tracking and cuts out the two graded halves (games.half_video_blocks). It computes the
-position features (possession.features), weighs them with the dead-ball and team models, and
-decodes them into possessions with the decoder chosen on the practice ground
-(models/possession_v1+trees-wide+deadtrees.json). It writes one frame,label row per video frame
-with LF line endings:
+position features (possession.features), weighs them with the per-frame model, a temporal
+convolutional network applied with numpy alone (possession.tcn), and decodes them into
+possessions with the decoder chosen on the practice ground (models/possession_v1+tcn.json). It
+writes one frame,label row per video frame with LF line endings:
 H, A or D inside the graded halves, and X outside them, where nothing is graded. The organisers'
 own validation checks the file before anything else is reported.
 
@@ -41,12 +41,13 @@ for path in (ROOT, os.path.join(ROOT, "evaluation")):
 from possession.safety import run_safely  # noqa: E402
 
 DEFAULT_OUT = os.path.join(ROOT, "evaluation", "results", "possession_v1.csv")
-# Trees for both the dead-ball and the team call (M11e), refitted in M11g on the practice ground
-# whose player noise was fitted to the match's player speeds. Adopted on 2026-11-09 by the rule in
-# scripts/train_models.py (runs/20261109T1411Z-train_models): held-out spellF1 0.650 against 0.539
-# for the same kinds fitted on the ground before, scored on the same frames. Frozen on 2026-11-10
-# (M12): M11h and M11i found nothing better.
-DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+trees-wide+deadtrees.json")
+# A temporal convolutional network for both calls (M11l), adopted on 2026-11-12 by the rule fixed
+# before the run in scripts/train_tcn.py (runs/20261112T1010Z-train_tcn): held-out spellF1 at
+# +/-1 s 0.680 against 0.650 for the trees frozen on 2026-11-10 (M12), better on 6 of 7 matches,
+# and again on held-out halves degraded with a second seed, 0.674 against 0.649. The trees,
+# models/possession_v1+trees-wide+deadtrees.json, are the previous submission's model: --models
+# picks them.
+DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+tcn.json")
 PUBLIC_GT = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
 # baseline_smooth50 on the public window, as docs/challenge/README.md prints it.
 PUBLIC_BASELINE = (0.6207, 0.3256)

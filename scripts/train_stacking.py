@@ -31,6 +31,10 @@ without it, and written with the first stage fitted on all seven and the decoder
 all seven at EVAL_SEED to models/possession_v1+trees-wide+deadtrees+stack.json, whatever the
 verdict. The file is committed only if adopted.
 
+The run of 2026-11-12 (runs/20261112T1009Z-train_stacking) kept the trees: stage two improved both
+calls frame by frame but held-out spellF1 at +/-1 s by only +0.0015, and +0.0049 at the second
+seed, with a loss at +/-2 s both times. Its model file is not committed.
+
 Public data only; reads no match data. A job for Kaggle on CPU (kaggle/README.md), not for the
 team's laptop.
 

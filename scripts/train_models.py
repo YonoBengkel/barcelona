@@ -56,7 +56,9 @@ its macroF1 falls by at most 0.005. If several pass, the one with the highest he
 The model was frozen on 2026-11-10 (M12). With no option the script fits that model alone (design
 v1, tree models for both calls, the base decoder grid, M11g's practice ground) and writes
 models/possession_v1+trees-wide+deadtrees.json as committed, in about 25 minutes on Kaggle. The
-options bring back the comparisons of M11a to M11i.
+options bring back the comparisons of M11a to M11i. On 2026-11-12 M11l replaced it in the
+submission with a temporal convolutional network (scripts/train_tcn.py); these trees are that
+comparison's reference.
 
 Public data only; reads no match data. A job for Kaggle (kaggle/README.md), not for the team's
 laptop.

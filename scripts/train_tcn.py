@@ -25,6 +25,11 @@ the higher held-out spellF1 at +/-1 s is adopted.
 Last, the network is fitted on all seven matches and both candidates are written to
 models/possession_<name>.json, whatever the verdict. A file is committed only if adopted.
 
+The run of 2026-11-12 (runs/20261112T1010Z-train_tcn) adopted 'v1+tcn': held-out spellF1 at +/-1 s
+0.6800 against 0.6498 for the trees, better on 6 of 7 matches, and 0.6742 against 0.6494 at the
+second seed. Both candidates passed twice; the network alone scored higher at EVAL_SEED.
+models/possession_v1+tcn.json is that run's file, which scripts/make_submission.py applies.
+
 Public data only; reads no match data. A job for Kaggle with a GPU (kaggle/README.md); the runner
 installs PyTorch for it from requirements-torch.txt. Nothing the submission runs needs PyTorch.
 

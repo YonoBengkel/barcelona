@@ -45,8 +45,9 @@ One command regenerates the submission on CPU from the match data and the commit
 python scripts/make_submission.py    # writes evaluation/results/possession_v1.csv
 ```
 
-It applies `models/possession_v1+trees-wide+deadtrees.json`, which `scripts/train_models.py` fits
-on public data from other matches (see [kaggle/](kaggle/README.md)), and prints aggregates only,
+It applies `models/possession_v1+tcn.json`, a temporal convolutional network that
+`scripts/train_tcn.py` fits on public data from other matches (see [kaggle/](kaggle/README.md))
+and that numpy alone applies, and prints aggregates only,
 including the file's SHA-256 for comparing runs. The file we submit, `BasahKuyups.csv`, is this
 output renamed: SHA-256 `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
 To check the data bundle, the frame alignment
