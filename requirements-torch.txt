@@ -1,0 +1,4 @@
+# PyTorch fits M11l's network on Kaggle (scripts/train_tcn.py). Nothing the submission runs needs
+# it: the network's weights are applied with numpy alone (possession/tcn.py). kaggle/run.py installs
+# this file for that job only, constrained by requirements.txt so no pinned package moves.
+torch==2.7.1

@@ -166,12 +166,19 @@ def slowed(features, factor):
     return out
 
 
-def build(match_ids, seeds, step, designs=("v1",), speed_factors=(), params=None):
+def build(match_ids, seeds, step, designs=("v1",), speed_factors=(), params=None,
+          eval_seed=EVAL_SEED, sequences=None):
     """Training rows per design and match, and the held-out halves per match for evaluation,
     with one feature matrix per design under 'X' and, for the speed check, one per design and
     speed factor under 'slow'. The features are computed once per half and only the design
     differs, so every design sees exactly the same frames. params: the practice ground's
-    DegradeParams, its defaults unless given."""
+    DegradeParams, its defaults unless given.
+
+    eval_seed degrades the held-out halves (EVAL_SEED unless given; M11l confirms a candidate on
+    a second one). sequences, when given a dict, is filled for the first design with
+    {match: [half, ...]}, one entry per training copy in the order the rows are built: 'X' and
+    'mirrored' (the whole half's design matrix, float32, as degraded and with home and away
+    exchanged), 'labels', 'seed' and 'section'. The rows themselves are unchanged by it."""
     params = DegradeParams() if params is None else params
     train = {v: {m: {"dead": ([], []), "team": ([], [])} for m in match_ids} for v in designs}
     for seed in range(seeds):
@@ -189,8 +196,12 @@ def build(match_ids, seeds, step, designs=("v1",), speed_factors=(), params=None
                 rows["dead"][1].append(labels[every] == "D")
                 rows["team"][0].extend([X[live], mirrored[live]])
                 rows["team"][1].extend([labels[live] == "H", labels[live] == "A"])
+                if sequences is not None and version == designs[0]:
+                    sequences.setdefault(case["match"], []).append(
+                        {"X": X, "mirrored": mirrored, "labels": labels, "seed": seed,
+                         "section": case["section"]})
     held_out = {}
-    for case in practice.cases(match_ids, params=params, tolerance_s=1.0, seed=EVAL_SEED):
+    for case in practice.cases(match_ids, params=params, tolerance_s=1.0, seed=eval_seed):
         features = compute(case["half"], PITCH)[0]
         part = held_out.setdefault(case["match"], {
             "X": {v: [] for v in designs},

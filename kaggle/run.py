@@ -3,7 +3,9 @@
 kaggle/cell.py clones the repository to /tmp/barcelona and calls this file with the job: a script
 and its arguments, relative to the repository root. The steps:
 
-1. build the pinned environment, Python 3.12.4 with requirements.txt, using uv;
+1. build the pinned environment, Python 3.12.4 with requirements.txt, using uv, plus the job's
+   own extra requirements when EXTRA_REQUIREMENTS names some (PyTorch for scripts/train_tcn.py,
+   kept within requirements.txt's pins);
 2. fetch the IDSSE files, pinned and checked (scripts/fetch_idsse.py);
 3. run the tests, so a broken environment stops the run here;
 4. run the job;
@@ -33,6 +35,8 @@ VENV = "/tmp/venv"
 PYTHON = os.path.join(VENV, "bin", "python")
 PYTHON_VERSION = "3.12.4"
 RESULTS = "/kaggle/working/kaggle-results.zip"
+# Requirements a job needs beyond requirements.txt, which the submission alone needs (M11l).
+EXTRA_REQUIREMENTS = {"scripts/train_tcn.py": "requirements-torch.txt"}
 
 
 class Log:
@@ -96,20 +100,28 @@ def main():
     log = Log()
     manifest = {"command": command, "commit": capture(["git", "rev-parse", "HEAD"]),
                 "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", started),
-                "cpus": os.cpu_count(), "platform": platform.platform(), "steps": []}
-    log.write("commit {}\njob {}\n{} CPUs, {:.0f} GB free in /tmp\n".format(
-        manifest["commit"], command, os.cpu_count(), shutil.disk_usage("/tmp").free / 1e9))
+                "cpus": os.cpu_count(), "platform": platform.platform(),
+                "gpu": capture(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]),
+                "steps": []}
+    log.write("commit {}\njob {}\n{} CPUs, {:.0f} GB free in /tmp, GPU {}\n".format(
+        manifest["commit"], command, os.cpu_count(), shutil.disk_usage("/tmp").free / 1e9,
+        manifest["gpu"] or "none"))
 
-    steps = (
+    install = [sys.executable, "-m", "uv", "pip", "install", "--quiet", "--python", PYTHON]
+    steps = [
         ("install uv", [sys.executable, "-m", "pip", "install", "--quiet", "uv"]),
         ("create the environment", [sys.executable, "-m", "uv", "venv", "--quiet",
                                     "--python", PYTHON_VERSION, VENV]),
-        ("install the requirements", [sys.executable, "-m", "uv", "pip", "install", "--quiet",
-                                      "--python", PYTHON, "-r", "requirements.txt"]),
+        ("install the requirements", install + ["-r", "requirements.txt"]),
+    ]
+    if job[0] in EXTRA_REQUIREMENTS:
+        steps.append(("install the job's extra requirements",
+                      install + ["-r", EXTRA_REQUIREMENTS[job[0]], "-c", "requirements.txt"]))
+    steps += [
         ("fetch IDSSE", [PYTHON, "scripts/fetch_idsse.py"]),
         ("run the tests", [PYTHON, "-m", "pytest", "-q", "-p", "no:cacheprovider"]),
         ("run the job", [PYTHON] + job),
-    )
+    ]
     shutil.rmtree(VENV, ignore_errors=True)  # left over when the cell is run twice in a session
     code = 1
     try:

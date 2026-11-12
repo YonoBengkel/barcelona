@@ -34,7 +34,9 @@ tests run in every run, before the job, so `main` is moved up to `dev` only afte
 
 [run.py](run.py) carries out the run in five steps:
 
-1. Builds the pinned environment, Python 3.12.4 with `requirements.txt`, using uv.
+1. Builds the pinned environment, Python 3.12.4 with `requirements.txt`, using uv. A job named
+   in `EXTRA_REQUIREMENTS` gets its own extra file on top, held to `requirements.txt`'s pins:
+   `scripts/train_tcn.py` gets PyTorch from `requirements-torch.txt`.
 2. Downloads the IDSSE files at a pinned revision of the mirror and checks every file's size and
    digest ([scripts/fetch_idsse.py](../scripts/fetch_idsse.py)).
 3. Runs the tests. A broken environment stops the run here.
@@ -53,6 +55,8 @@ The zip is written even when a step fails, so the log always comes back.
 | `scripts/eval_external.py` | Kaggle | IDSSE |
 | `scripts/calibrate_simulator.py` | Kaggle | IDSSE |
 | `scripts/feature_report.py`, `simulate_report.py`, `idsse_label_report.py` | Kaggle | IDSSE |
+| `scripts/train_stacking.py` (M11l) | Kaggle | IDSSE |
+| `scripts/train_tcn.py` (M11l): set Accelerator to GPU T4 x2 before saving the version | Kaggle, GPU | IDSSE |
 | `python -m pytest` | anywhere; step 3 of every Kaggle run | synthetic data |
 | `scripts/make_submission.py`, `check_baselines.py`, `atd_profile.py`, `data_properties.py` | the laptop only | the match data |
 

@@ -5,7 +5,9 @@ automatic-tracking quality), `practice` (the practice ground and its official sc
 positions alone), `models` (logistic regressions and gradient-boosted trees for the dead-ball and
 team calls, both applied with numpy alone),
 `decode` (the three-state hidden Markov model and its Viterbi decoder), `submission` (the CSV
-writer) and `diagnose` (errors by ball state and by possession); the scripts under "How to run";
+writer) and `diagnose` (errors by ball state and by possession); M11l's two candidates, `tcn` (a
+temporal convolutional network applied with numpy alone) and `stacking` (a stage two of trees on
+the first stage's log-odds), which the frozen model does not use; the scripts under "How to run";
 and the Kaggle runner in `kaggle/`. Rewrite this file from the code as later milestones land.
 
 # Architecture
@@ -101,7 +103,16 @@ scripts/calibrate_simulator.py # fit DegradeParams to the match's profile (aggre
 scripts/feature_report.py      # signal of each feature (ROC AUC)
 scripts/simulate_report.py     # IDSSE profile before and after degradation
 scripts/idsse_label_report.py  # raw against aligned possession statistics
+scripts/train_stacking.py      # M11l: a stage two of trees against the frozen pipeline
+scripts/train_tcn.py           # M11l: a temporal convolutional network, alone and beside the
+                               # trees, against it; needs the GPU accelerator, and the runner
+                               # installs PyTorch for it from requirements-torch.txt
 ```
+
+M11l's candidates are set against the frozen pipeline by the same rule, at the held-out seed and
+again at a second one. `possession.models.scores` applies whichever models a file holds: the
+trees alone (the frozen file, unchanged), a network (`possession.tcn`), both averaged, or a
+stage two on top (`possession.stacking`). All of them run with numpy alone at submission time.
 
 Jobs that read the match data run on the team's laptop only, and print aggregates only:
 
@@ -134,7 +145,7 @@ the script stops before it reads the match.
 | Data | files only: the match bundle and public datasets, both gitignored; committed model parameters |
 | Auth | none |
 | Hosting | none |
-| Compute | Kaggle CPU notebooks for jobs on public data, started by hand through `kaggle/`; the team's laptop, on CPU, for every job that reads the match data, which never leaves it. Single process, deterministic |
+| Compute | Kaggle CPU notebooks for jobs on public data, started by hand through `kaggle/`, and a GPU one to fit M11l's network; the team's laptop, on CPU, for every job that reads the match data, which never leaves it. Single process; the submission is deterministic |
 | CI/CD | none; `.githooks/pre-commit` refuses commits that contain match data, and every Kaggle run runs the tests before its job |
 | Row-level security | not applicable |
 | Rate limiting | not applicable |

@@ -3,9 +3,10 @@
 import numpy as np
 import pytest
 
+from possession import tcn
 from possession.features import ALL_NAMES, EXTRA_NAMES, NAMES
-from possession.models import DESIGN_NAMES, SHORT_CONTEXT, design, design_names, fit, \
-    fit_trees, load, log_sigmoid, log_state_probabilities, probability, save, score, \
+from possession.models import DESIGN_NAMES, SHORT_CONTEXT, combine, design, design_names, fit, \
+    fit_trees, load, log_sigmoid, log_state_probabilities, probability, save, score, scores, \
     state_probabilities
 
 
@@ -104,3 +105,51 @@ def test_loading_refuses_a_model_fitted_on_other_features(tmp_path):
     save({"dead": model, "team": model}, str(tmp_path / "bad.json"))
     with pytest.raises(ValueError):
         load(str(tmp_path / "bad.json"))
+
+
+def tiny_network(rng, columns, channels=4, dilations=(1, 2)):
+    """A possession.tcn network with random weights, shaped as scripts/train_tcn.py writes one."""
+    def layer(outputs, inputs, taps):
+        return {"weight": rng.normal(0, 0.3, (outputs, inputs, taps)).tolist(),
+                "bias": rng.normal(0, 0.1, outputs).tolist()}
+
+    return {"kind": "tcn", "names": list(DESIGN_NAMES), "mean": [0.0] * columns,
+            "scale": [1.0] * columns, "input": layer(channels, 2 * columns, 1),
+            "blocks": [{"dilation": d, "dilated": layer(channels, channels, 3),
+                        "pointwise": layer(channels, channels, 1)} for d in dilations],
+            "output": layer(2, channels, 1)}
+
+
+def test_a_file_of_trees_alone_gives_the_trees_own_log_odds():
+    X, y = synthetic()
+    models = {"dead": fit_trees(X, y, max_iter=10), "team": fit_trees(X, ~y, max_iter=10)}
+    dead, home = scores(models, X)
+    # The frozen file must give the numbers it always gave (M11l changed the way to them).
+    assert dead.tobytes() == score(models["dead"], X).tobytes()
+    assert home.tobytes() == score(models["team"], X).tobytes()
+
+
+def test_a_network_is_averaged_with_the_trees_and_loads_alone(tmp_path):
+    X, y = synthetic(n=400)
+    rng = np.random.default_rng(4)
+    models = {"dead": fit(X, y), "team": fit(X, ~y), "tcn": tiny_network(rng, X.shape[1])}
+    trees = (score(models["dead"], X), score(models["team"], X))
+    network = tcn.scores(models["tcn"], X)
+    dead, home = scores(models, X)
+    assert dead.tobytes() == ((trees[0] + network[0]) / 2).tobytes()
+    assert home.tobytes() == ((trees[1] + network[1]) / 2).tobytes()
+    assert combine([trees])[0] is trees[0]
+
+    save(models, str(tmp_path / "both.json"))
+    assert np.array_equal(log_state_probabilities(load(str(tmp_path / "both.json")), X),
+                          log_state_probabilities(models, X))  # exact through JSON
+    save({"design": "v1", "tcn": models["tcn"]}, str(tmp_path / "alone.json"))
+    alone = load(str(tmp_path / "alone.json"))
+    assert np.array_equal(scores(alone, X)[1], network[1])
+    save({"design": "v1", "tcn": dict(models["tcn"], names=list(DESIGN_NAMES)[:-1])},
+         str(tmp_path / "bad.json"))
+    with pytest.raises(ValueError):
+        load(str(tmp_path / "bad.json"))
+    save({"design": "v1"}, str(tmp_path / "empty.json"))
+    with pytest.raises(ValueError):
+        load(str(tmp_path / "empty.json"))

@@ -20,6 +20,11 @@ M11d adds a second kind of model, gradient-boosted trees (fit_trees), for the te
 all: the perfect-evidence check showed the team call holds most of the missing score, and trees
 can use interactions a linear score cannot. They are kept as arrays and applied with numpy alone
 as well (score_trees).
+
+M11l tries two more ways to the same two log-odds (scores): a temporal convolutional network
+(possession.tcn), alone or averaged with the trees, and a stage two of trees that reads the first
+stage's log-odds around each frame (possession.stacking). Both are applied with numpy alone too.
+A file that holds only the trees gives exactly the numbers it gave before.
 """
 
 import json
@@ -175,13 +180,48 @@ def log_sigmoid(z):
     return np.minimum(z, 0.0) - np.log1p(np.exp(-np.abs(z)))
 
 
+def combine(parts):
+    """(dead, home) from several models' (dead, home) log-odds: one part as it is, several
+    averaged, summed in the order given."""
+    if len(parts) == 1:
+        return parts[0]
+    dead, home = parts[0]
+    for more_dead, more_home in parts[1:]:
+        dead, home = dead + more_dead, home + more_home
+    return dead / len(parts), home / len(parts)
+
+
+def scores(models, X):
+    """(dead, home): per frame of one half, the log-odds that the ball is dead and, if it is
+    alive, that the home side has it, from whichever models the file holds.
+
+    The frozen file holds the two tree models, 'dead' and 'team', and gives exactly the numbers
+    it always gave. M11l's candidates add a temporal convolutional network, 'tcn'
+    (possession.tcn), alone or averaged with the trees, and a stage two, 'stack'
+    (possession.stacking), which corrects the log-odds from how they move around each frame.
+    """
+    parts = []
+    if "dead" in models:
+        parts.append((score(models["dead"], X), score(models["team"], X)))
+    if "tcn" in models:
+        from possession import tcn
+        parts.append(tcn.scores(models["tcn"], X))
+    if not parts:
+        raise ValueError("the models hold neither trees nor a network")
+    dead, home = combine(parts)
+    if "stack" in models:
+        from possession import stacking
+        dead, home = stacking.apply(models["stack"], dead, home)
+    return dead, home
+
+
 def log_state_probabilities(models, X):
     """(frames, 3) log-probabilities of H, A, D: the evidence possession.decode weighs.
 
     Taken from the linear scores rather than as log(state_probabilities), so a frame the models
     are sure about gets a large finite number instead of log(0).
     """
-    dead, home = score(models["dead"], X), score(models["team"], X)
+    dead, home = scores(models, X)
     alive = log_sigmoid(-dead)
     return np.column_stack([alive + log_sigmoid(home), alive + log_sigmoid(-home),
                             log_sigmoid(dead)])
@@ -194,14 +234,21 @@ def save(models, path):
 
 
 def load(path):
-    """The models, checked against the design they name ('design', v1 when absent)."""
+    """The models, checked against the design they name ('design', v1 when absent) and, for a
+    stage two, against the features possession.stacking computes."""
     with open(path) as handle:
         models = json.load(handle)
     version = models.get("design", "v1")
     if version not in DESIGNS:
         raise ValueError("unknown design {}".format(version))
-    for name in ("dead", "team"):
-        if tuple(models[name]["names"]) != design_names(version):
+    if "dead" not in models and "tcn" not in models:
+        raise ValueError("the models hold neither trees nor a network")
+    for name in ("dead", "team", "tcn"):
+        if name in models and tuple(models[name]["names"]) != design_names(version):
             raise ValueError("{} model was fitted on other features than this code computes"
                              .format(name))
+    if "stack" in models:
+        from possession import stacking
+        if tuple(models["stack"]["names"]) != stacking.names():
+            raise ValueError("the stage two was fitted on other features than this code computes")
     return models
