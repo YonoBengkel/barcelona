@@ -84,7 +84,9 @@ def normaliser(halves):
 
 
 def network(in_channels, settings):
-    """The PyTorch twin of possession.tcn.scores, for fitting."""
+    """The PyTorch twin of possession.tcn.scores, for fitting. settings['dilations'], when given,
+    takes the place of possession.tcn.DILATIONS (M11n tries one more block); the adopted
+    network's settings have none."""
     import torch
     from torch import nn
 
@@ -92,12 +94,13 @@ def network(in_channels, settings):
         def __init__(self):
             super().__init__()
             channels, kernel = tcn.CHANNELS, tcn.KERNEL
+            dilations = settings.get("dilations", tcn.DILATIONS)
             self.input = nn.Conv1d(in_channels, channels, 1)
             self.dilated = nn.ModuleList(
                 nn.Conv1d(channels, channels, kernel, dilation=d, padding=(kernel - 1) // 2 * d)
-                for d in tcn.DILATIONS)
+                for d in dilations)
             self.pointwise = nn.ModuleList(nn.Conv1d(channels, channels, 1)
-                                           for _ in tcn.DILATIONS)
+                                           for _ in dilations)
             self.drop = nn.Dropout(settings["dropout"])
             self.output = nn.Conv1d(channels, 2, 1)
 
