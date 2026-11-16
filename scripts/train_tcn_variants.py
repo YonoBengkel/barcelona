@@ -31,6 +31,15 @@ The held-out log-odds come from possession.tcn.scores, the numpy code the submis
 in --workers processes while the GPU fits the next network. Last, only an adopted candidate is
 fitted on all seven matches and written to models/possession_<name>.json.
 
+The run of 2026-11-13 (Kaggle version 31, runs/20261113T1919Z-train_tcn_variants) adopted
+'v1+tcn+copies8': held-out spellF1 at +/-1 s 0.6980 against 0.6800 for the reference, better on 5
+of 7 matches, and 0.6980 against 0.6735 at the confirmation seed, 5 of 7 again. Its frame calls
+improved most (held-out log loss of the dead-ball call 0.0745 to 0.0529, of the team call 0.2868
+to 0.2276), and its decoder chose team_switch 8, the bottom of the grid. The wider network failed
+at both seeds; the trees with five networks passed at the confirmation seed only.
+models/possession_v1+tcn+copies8.json is that run's file, which scripts/make_submission.py
+applies.
+
 Public data only; reads no match data. A job for Kaggle with a GPU (kaggle/README.md); the runner
 installs PyTorch for it from requirements-torch.txt. Nothing the submission runs needs PyTorch.
 

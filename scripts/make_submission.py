@@ -6,8 +6,9 @@ The one command that turns the match's tracking into the file the organisers sco
 tactical tracking and cuts out the two graded halves (games.half_video_blocks). It computes the
 position features (possession.features), weighs them with the per-frame model, a temporal
 convolutional network applied with numpy alone (possession.tcn), and decodes them into
-possessions with the decoder chosen on the practice ground (models/possession_v1+tcn.json). It
-writes one frame,label row per video frame with LF line endings:
+possessions with the decoder chosen on the practice ground
+(models/possession_v1+tcn+copies8.json). It writes one frame,label row per video frame with LF
+line endings:
 H, A or D inside the graded halves, and X outside them, where nothing is graded. The organisers'
 own validation checks the file before anything else is reported.
 
@@ -41,13 +42,15 @@ for path in (ROOT, os.path.join(ROOT, "evaluation")):
 from possession.safety import run_safely  # noqa: E402
 
 DEFAULT_OUT = os.path.join(ROOT, "evaluation", "results", "possession_v1.csv")
-# A temporal convolutional network for both calls (M11l), adopted on 2026-11-12 by the rule fixed
-# before the run in scripts/train_tcn.py (runs/20261112T1010Z-train_tcn): held-out spellF1 at
-# +/-1 s 0.680 against 0.650 for the trees frozen on 2026-11-10 (M12), better on 6 of 7 matches,
-# and again on held-out halves degraded with a second seed, 0.674 against 0.649. The trees,
-# models/possession_v1+trees-wide+deadtrees.json, are the previous submission's model: --models
-# picks them.
-DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+tcn.json")
+# The temporal convolutional network of M11l fitted on eight degraded copies of every training
+# half instead of two (M11n), adopted by the rule fixed before the run in
+# scripts/train_tcn_variants.py (runs/20261113T1919Z-train_tcn_variants): held-out spellF1 at
+# +/-1 s 0.698 against 0.680 for the network on two copies, better on 5 of 7 matches, and again on
+# held-out halves degraded with a fresh seed, 0.698 against 0.674. --models picks the previous
+# submissions' models: models/possession_v1+tcn.json, the network on two copies (M11l, adopted
+# over the trees: 0.680 against 0.650), and models/possession_v1+trees-wide+deadtrees.json, the
+# trees frozen on 2026-11-10 (M12).
+DEFAULT_MODELS = os.path.join(ROOT, "models", "possession_v1+tcn+copies8.json")
 PUBLIC_GT = os.path.join(ROOT, "evaluation", "gt", "BAR-ATH_possession_gt_public.csv")
 # baseline_smooth50 on the public window, as docs/challenge/README.md prints it.
 PUBLIC_BASELINE = (0.6207, 0.3256)

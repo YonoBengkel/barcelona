@@ -28,10 +28,11 @@ per-frame features ──► possession.models.design: log scale for skewed feat
    │  means over 2.5-5 s for context
    │  possession.models.log_state_probabilities: P(dead) and P(home | alive) from
    │  possession.models.scores. Since M11l (2026-11-12) both come from a temporal convolutional
-   │  network (possession.tcn) in models/possession_v1+tcn.json, which reads the design columns
-   │  over about 10 s either side of the frame. It is applied with numpy alone, summed tap by tap
-   │  and input by input in a fixed order, so the result does not depend on the CPU's BLAS. The
-   │  previous model, gradient-boosted trees for both calls
+   │  network (possession.tcn), since M11n fitted on eight degraded copies of every training
+   │  half (models/possession_v1+tcn+copies8.json). It reads the design columns over about 10 s
+   │  either side of the frame and is applied with numpy alone, summed tap by tap and input by
+   │  input in a fixed order, so the result does not depend on the CPU's BLAS. The earlier
+   │  model, gradient-boosted trees for both calls
    │  (models/possession_v1+trees-wide+deadtrees.json), is walked tree by tree in a fixed order,
    │  and a logistic regression is summed column by column
    ▼
@@ -110,18 +111,21 @@ scripts/idsse_label_report.py  # raw against aligned possession statistics
 scripts/train_stacking.py      # M11l: a stage two of trees against the trees (not adopted)
 scripts/train_tcn.py           # M11l: a temporal convolutional network, alone and beside the
                                # trees, against them; writes models/possession_v1+tcn.json, the
-                               # adopted model. Needs the GPU accelerator, and the runner
+                               # network adopted then. Needs the GPU accelerator, and the runner
                                # installs PyTorch for it from requirements-torch.txt
-scripts/train_tcn_ensemble.py  # M11m: an ensemble of networks against the adopted one, the same
+scripts/train_tcn_ensemble.py  # M11m: an ensemble of networks against that network, the same
                                # way (not adopted); GPU and PyTorch as above
 scripts/train_tcn_variants.py  # M11n: eight training copies, a wider reach, and the trees with
-                               # five networks, against the adopted one; GPU and PyTorch as above
+                               # five networks, against that network; writes the adopted
+                               # models/possession_v1+tcn+copies8.json; GPU and PyTorch as above
 ```
 
 M11l's candidates were set against the trees frozen in M12 by the same rule, at the held-out seed
-and again at a second one; the network alone was adopted. `possession.models.scores` applies
-whichever models a file holds: the trees alone (the frozen file, unchanged), a network
-(`possession.tcn`), both averaged, or a stage two on top (`possession.stacking`). All of them run
+and again at a second one; the network alone was adopted. M11n's were set against that network
+the same way, and the network fitted on eight training copies was adopted.
+`possession.models.scores` applies whichever models a file holds: the trees alone (the frozen
+file, unchanged), a network (`possession.tcn`), both averaged, or a stage two on top
+(`possession.stacking`). All of them run
 with numpy alone at submission time.
 
 Jobs that read the match data run on the team's laptop only, and print aggregates only:
@@ -141,10 +145,11 @@ every file's size and digest. The first read of an IDSSE match parses its XML (a
 laptop) and caches the arrays under `external/idsse/cache/`; later reads take a fraction of a
 second.
 
-`scripts/make_submission.py` applies `models/possession_v1+tcn.json` (adopted on 2026-11-12 by
-the rule in `scripts/train_tcn.py`; `--models` picks another file, such as the previous trees).
-The file must carry a `decoder` section, written by a Kaggle run of `scripts/train_tcn.py` or
-`scripts/train_models.py`; without one the script stops before it reads the match.
+`scripts/make_submission.py` applies `models/possession_v1+tcn+copies8.json` (adopted by the rule
+in `scripts/train_tcn_variants.py`; `--models` picks another file, such as the previous network
+or the trees). The file must carry a `decoder` section, written by a Kaggle run of
+`scripts/train_tcn_variants.py`, `scripts/train_tcn.py` or `scripts/train_models.py`; without one
+the script stops before it reads the match.
 
 ## Application layers
 

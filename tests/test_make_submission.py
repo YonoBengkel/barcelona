@@ -103,7 +103,7 @@ def test_a_valid_file_and_aggregates_only(tmp_path, monkeypatch, capsys):
 
 def test_the_default_model_is_the_adopted_network():
     models = make_submission.DEFAULT_MODELS
-    assert os.path.basename(models) == "possession_v1+tcn.json" and os.path.isfile(models)
+    assert os.path.basename(models) == "possession_v1+tcn+copies8.json" and os.path.isfile(models)
 
 
 def test_a_network_model_file_makes_a_valid_file_too(tmp_path, monkeypatch, capsys):
