@@ -46,11 +46,11 @@ One command regenerates the submission on CPU from the match data and the commit
 python scripts/make_submission.py    # writes evaluation/results/possession_v1.csv
 ```
 
-It applies `models/possession_v1+tcn.json`, a temporal convolutional network that
-`scripts/train_tcn.py` fits on public data from other matches (see [kaggle/](kaggle/README.md))
-and that numpy alone applies, and prints aggregates only,
+It applies `models/possession_v1+tcn+copies8.json`, a temporal convolutional network that
+`scripts/train_tcn_variants.py` fits on public data from other matches (see
+[kaggle/](kaggle/README.md)) and that numpy alone applies, and prints aggregates only,
 including the file's SHA-256 for comparing runs. The file we submit, `BasahKuyups.csv`, is this
-output renamed: SHA-256 `17b2110c78b534d682e9c22f75e74b75f6e2b64e4f13e4d2b212499f7ed27432`.
+output renamed: SHA-256 `70bd854116f3262c21cbcd94867ff1b256b870cd4c0afab8f5d831ddef1f4a58`.
 To check the data bundle, the frame alignment
 and the environment in one go, this rebuilds the organisers' four baselines and confirms they
 match the committed ones:

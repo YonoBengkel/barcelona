@@ -34,19 +34,21 @@ tactical tracking ─► 46 columns per frame ─► P(dead), P(home | alive) �
    - A 1x1 convolution to 64 channels is followed by eight residual blocks of convolutions over
      three frames, spaced 1, 2, 4, ... 128 frames apart. So each frame's output can draw on about
      10 s either side of it.
-   - PyTorch fits it on whole training halves, each also with home and away swapped, so that it
-     treats both sides alike: 3,000 steps of one half each, AdamW, settings fixed before the run.
+   - PyTorch fits it on whole training halves, eight degraded copies of each, every one also with
+     home and away swapped so that it treats both sides alike: 3,000 steps of one half each,
+     AdamW, settings fixed before the run.
    - The submission applies it with numpy alone. Each output is summed tap by tap and input by
      input in a fixed order, element by element, never through a matrix product. ReLU and
      element-wise arithmetic are exact, so the result does not depend on the CPU or on how a
      linear algebra library splits the work.
-   - It replaced gradient-boosted trees for both calls (Section 5). The trees remain in the
-     repository as the previous model and the reference every change is set against.
+   - It replaced gradient-boosted trees for both calls, and fitting it on eight degraded copies of
+     every half instead of two made it better still (Section 5). The trees remain in the
+     repository as an earlier model.
 3. **A decoder** (`possession/decode.py`). `spellF1` matches whole possessions, and per-frame calls
    flicker, so the frame evidence is decoded with a three-state hidden Markov model.
-   - A path pays `team_switch` = 16 nats of evidence to pass the ball from one team to the other,
-     and `dead_switch` = 16 nats for a stoppage (half when play stops, half when it restarts).
-   - `dead_bias` = 1.0 is added to the dead-ball evidence on every frame.
+   - A path pays `team_switch` = 8 nats of evidence to pass the ball from one team to the other,
+     and `dead_switch` = 32 nats for a stoppage (half when play stops, half when it restarts).
+   - `dead_bias`, a shift of the dead-ball evidence on every frame, came out at 0.
    - Viterbi gives each possession one start and one end. A short run of contrary frames cannot pay
      for the two switches it would take.
 
@@ -65,9 +67,9 @@ match.
 - A change replaces the current pipeline only by a rule fixed in the code before each run: held-out
   `spellF1` at ±1 s at least 0.01 higher, better on at least 5 of the 7 matches, no loss at ±0.5 s
   or ±2 s, and `macroF1` down by at most 0.005.
-- The last change, the network, was one of three candidates tried together. So it had to pass that
-  rule twice: on the held-out matches as degraded for scoring, and again on a second, independent
-  degradation of them.
+- The last two changes, the network and then its eight training copies, were each one of three
+  candidates tried together. So each had to pass that rule twice: on the held-out matches as
+  degraded for scoring, and again on a second, independent degradation of them.
 - The public five minutes never chose anything.
 
 ## 2. Assets: used, and tried and dropped
@@ -104,9 +106,10 @@ practice ground at ±1 s labels.
   neighbour: up to 1 s for a team's spell and 2 s for a stoppage, beside a lower cost of a change
   of team. The search kept that cost where it was and held a team's spell to at least 1 s:
   +0.0003, better on 2 of 7 matches. Kept in the code as the decoder grid `mindur`, not used.
-- **Twice the training copies**: four degraded copies of every training half instead of two. The
-  frame models improved a little (team log loss 0.2526 to 0.2465), but the decoder then chose a
-  higher `team_switch` and merged more possessions: -0.0016, better on 3 of 7 matches.
+- **Twice the training copies for the trees**: four degraded copies of every training half
+  instead of two. The frame models improved a little (team log loss 0.2526 to 0.2465), but the
+  decoder then chose a higher `team_switch` and merged more possessions: -0.0016, better on 3 of 7
+  matches. The network, which overfits far more than the trees, gained from eight (Section 5).
 - **A stage two of trees** that reads the trees' log-odds 0.2 to 2 s around each frame, fitted
   nested inside the leave-one-match-out loop so that no held-out label reached it. It improved both
   calls frame by frame (team log loss 0.2504 to 0.2288 on one degradation of the held-out
@@ -120,6 +123,11 @@ practice ground at ±1 s labels.
   held-out matches, used by no earlier run, both gained +0.0107, on 5 of 7. Frame by frame the
   average was clearly better (team log loss 0.2868 to 0.2654). But the rule asks for a gain on
   most matches, so the single network stayed.
+- **A network that reads twice as far**, about 20 s either side, with one more residual block
+  (spacings up to 256 frames), against the network on two copies: -0.011, better on 2 of 7
+  matches. Dropped.
+- **The trees averaged with five networks**, against the network on two copies: +0.004, better on
+  4 of 7 matches. It passed the rule only on the second degradation (+0.015, 5 of 7). Dropped.
 - **0.15 m of player position noise in the simulator.** Once set against the match's player speeds
   it came out at none, which changed the practice ground itself (Section 3).
 
@@ -153,11 +161,12 @@ The parameters were fitted to label-free statistics of the match's own tracking,
 - in a later refit, the players' speed percentiles. Degraded IDSSE matches them best with no
   added player noise (loss 0.302, against 5.069 at the earlier 0.15 m).
 
-Every training half is degraded with two seeds.
-- The network learns from those 28 halves whole, each also mirrored.
-- The trees learned from every eighth frame of them: 250,672 dead-ball rows and 276,572 team rows.
-- The held-out matches are degraded with a third seed. The network's adoption was checked again on
-  a fourth.
+Every training half is degraded with eight seeds.
+- The network learns from those 112 halves whole, each also mirrored.
+- The trees learned from every eighth frame of the first two copies: 250,672 dead-ball rows and
+  276,572 team rows.
+- The held-out matches are degraded with a further seed. Each of the last two adoptions was checked
+  again on another one that no earlier run had used.
 
 ## 4. Possession rules
 
@@ -182,7 +191,8 @@ The models learn the practice labels, so the rules live there. The labels follow
   matters.
 
 On the match, the decoder applies the same spirit. A team change has to be backed by about
-16 nats of evidence, so a touch or a deflection does not move the ball. Every graded frame gets
+8 nats of evidence, so a touch or a deflection does not move the ball on its own. Every graded
+frame gets
 `H`, `A` or `D`; `X` is written only outside the two graded halves, where nothing is scored.
 
 ## 5. Results on the practice ground
@@ -200,15 +210,21 @@ Held-out over the seven matches, nested as in Section 1, labels at ±1 s:
 | The previous submission with a stage two of trees on its log-odds | 0.651 | 0.912 |
 | The trees and the network averaged | 0.678 | 0.921 |
 | Five networks averaged (not adopted: better on only 4 of 7 matches) | 0.690 | 0.924 |
-| The network in place of the trees: **submitted** | **0.680** | **0.918** |
+| The network in place of the trees: the previous submission | 0.680 | 0.918 |
+| The network reading about 20 s either side (not adopted) | 0.669 | 0.918 |
+| The trees and five networks averaged (not adopted) | 0.684 | 0.924 |
+| The network fitted on eight copies of every training half: **submitted** | **0.698** | **0.926** |
 
-- The submitted pipeline scores 0.686 at ±0.5 s and 0.654 at ±2 s, and between 0.647 and 0.707 per
-  match. It is better than the trees on 6 of the 7 matches; on the seventh it is 0.001 lower.
-- On a second, independent degradation of the held-out matches it scores 0.674 against the trees'
-  0.649, better on 5 of 7.
-- Its decoder setting is `team_switch` 16, `dead_switch` 16, `dead_bias` 1.0.
-- It matches 1,414 of the 2,201 practice possessions at IoU 0.5, against 1,353 for the trees, and
-  20% of those under 2 s, against 16%.
+- The submitted pipeline scores 0.706 at ±0.5 s and 0.670 at ±2 s, and between 0.660 and 0.759 per
+  match. It is better than the network on two copies on 5 of the 7 matches.
+- On a second, independent degradation of the held-out matches it scores 0.6980 against 0.6735
+  for the network on two copies, better on 5 of 7.
+- Frame by frame, its held-out log loss is 0.053 for the dead-ball call and 0.228 for the team
+  call, against 0.075 and 0.287 on two copies. Its decoder setting is `team_switch` 8,
+  `dead_switch` 32, `dead_bias` 0.0: better calibrated evidence lets it pay less for a change of
+  team.
+- It matches 1,450 of the 2,201 practice possessions at IoU 0.5, against 1,414 for the network on
+  two copies and 1,353 for the trees, and 20% of those under 2 s.
 - On the earlier ground, the baseline scored 0.261 against 0.243 published for it on the full
   match: for that baseline at least, the practice ground is about as hard as the match.
 - The recalibration rows: on a ground whose players move as fast as the match's, the trees fitted
@@ -218,31 +234,33 @@ Held-out over the seven matches, nested as in Section 1, labels at ±1 s:
 
 **On the match itself**, without labels, the file passes the organisers' validation, and every
 check we can make falls where the practice ground predicts:
-- 47.2% of the graded frames are called dead, against 44.8% dead in the practice labels.
-- 319 possessions, 30.1 per 10 minutes with a mean of 10.5 s, inside the range the network gives on
-  the practice matches (26.0-30.2 and 9.4-13.1 s), near its top.
+- 45.1% of the graded frames are called dead, against 44.8% dead in the practice labels.
+- 316 possessions, 29.8 per 10 minutes with a mean of 11.0 s, inside the range the network gives on
+  the practice matches (25.3-30.6 and 9.6-13.6 s), near its top.
 - The attacking directions inferred from the tracking agree with the metadata in both halves.
 - On the public five minutes, a check that chose nothing (the network was adopted on the practice
-  ground before it ran): `macroF1` 0.836 and `spellF1` 0.682, against the baseline's 0.621 and
+  ground before it ran): `macroF1` 0.859 and `spellF1` 0.689, against the baseline's 0.621 and
   0.326. With 17 possessions in the window, these numbers move a lot with one or two possessions.
 
 ## 6. Limitations
 
-- **Short possessions and the team call.** Of the 2,201 practice possessions, 1,414 are matched at
+- **Short possessions and the team call.** Of the 2,201 practice possessions, 1,450 are matched at
   IoU 0.5. Of the missed ones:
   - 48% go to the wrong team;
-  - 28% are merged with a neighbour;
+  - 30% are merged with a neighbour;
   - 10% have their edges too far off;
-  - 9% are called dead;
-  - 5% are split.
+  - 7% are called dead;
+  - 4% are split.
 
   Only 20% of possessions under 2 s are matched, and 55% of those of 2-5 s.
 - **The network learned from seven matches.**
-  - Its training loss falls well below its held-out loss.
-  - Its team log-odds are overconfident: held-out log loss 0.287 against the trees' 0.253, although
-    it calls more live frames right (90.4% against 89.9%). The decoder, chosen on held-out scores,
-    absorbs this.
-  - The decoder's `dead_bias` sits at the top of its grid (1.0).
+  - Eight training copies narrowed the gap between its training and held-out loss, but did not
+    close it: its training loss ends near 0.18, its held-out loss of both calls near 0.28 (0.125
+    and 0.36 on two copies).
+  - Its team calls are now better calibrated than the trees': held-out log loss 0.228 against
+    0.253, with 91.1% of live frames called right against 89.9%.
+  - The decoder's `team_switch` sits at the bottom of its grid (8). A lower cost might do better;
+    it was not tried.
   - On the match its possessions per 10 minutes sit near the top of the practice range.
 - **The practice ground is not the match.**
   - Bundesliga, not LaLiga.
@@ -266,9 +284,9 @@ check we can make falls where the practice ground predicts:
     way to weigh them without labels on this match;
   - give the decoder a fuller model of how long possessions last: holding every spell to a
     minimum, the simplest such model, gained almost nothing (Section 2);
-  - fit the network on more matches, and decide there on an ensemble of networks (ahead on
-    average here, but not on most matches) and on its average with the trees (ahead on the second
-    degradation).
+  - fit the network on more matches, and decide there on a decoder grid below `team_switch` 8, on
+    an ensemble of networks (ahead on average here, but not on most matches) and on its average
+    with the trees (ahead on the second degradation only).
 
 ## 7. Reproduction
 
@@ -287,31 +305,35 @@ python scripts/make_submission.py    # writes evaluation/results/possession_v1.c
   | tactical `_atd.xml` | `327e35e32e46a647389b88f883d4f9a2ab931e3e6148aef2fcf8f22b1e93c43a` |
   | tactical `_atd.txt` | `f130e350d2bfdf734b7e32f072931fccc6d015c1e837d082064875fe0a700431` |
 
-- It applies the committed `models/possession_v1+tcn.json`, validates the file with the
-  organisers' own checks, and prints aggregates and the file's SHA-256. The network was adopted
-  on 12 November 2026; it gives
-  `17b2110c78b534d682e9c22f75e74b75f6e2b64e4f13e4d2b212499f7ed27432`. The file we submit,
+- It applies the committed `models/possession_v1+tcn+copies8.json`, validates the file with the
+  organisers' own checks, and prints aggregates and the file's SHA-256. The network on eight
+  training copies was adopted on 16 November 2026; it gives
+  `70bd854116f3262c21cbcd94867ff1b256b870cd4c0afab8f5d831ddef1f4a58`. The file we submit,
   `BasahKuyups.csv`, is this output renamed.
 - On the same day, a fresh clone of the repository at the adopting commit, whose code `main`
   carries unchanged, reproduced that digest on a Windows 11 laptop. It used Python 3.12.4 and a
-  new virtual environment from `requirements.txt`, and took 39 seconds. The bundle was read in
+  new virtual environment from `requirements.txt`, and took 55 seconds. The bundle was read in
   place through `MTAH_DATA_DIR`, the starter kit's own setting, instead of being copied into
   `data/`.
-- The previous model, the trees frozen on 10 November (`--models
-  models/possession_v1+trees-wide+deadtrees.json`), gives
+- The previous models give other digests: the network on two copies, adopted on 12 November
+  (`--models models/possession_v1+tcn.json`),
+  `17b2110c78b534d682e9c22f75e74b75f6e2b64e4f13e4d2b212499f7ed27432`; the trees frozen on
+  10 November (`--models models/possession_v1+trees-wide+deadtrees.json`),
   `7657abaebff87e85c2599a90031c5912f031e62bc3e8d79f9afb2936dcf2906e`.
 
 **Refitting the model** uses public data only and is not needed to reproduce the file:
 
 ```bash
-python scripts/fetch_idsse.py      # IDSSE at the pinned revision, size and digest checked
-python scripts/train_tcn.py        # the network and its comparison, about 70 minutes on a T4 GPU
+python scripts/fetch_idsse.py          # IDSSE at the pinned revision, size and digest checked
+python scripts/train_tcn_variants.py   # the adopting comparison, about 4 hours on a T4 GPU
 ```
 
-- The refit needs PyTorch (`requirements-torch.txt`), which nothing at submission time uses. A
-  later refit on the same kind of GPU, a T4, gave exactly the same held-out scores. A refit on
-  other hardware may differ in the last bits of the weights; the submission is reproduced from the
-  committed weights.
+- The refit needs PyTorch (`requirements-torch.txt`), which nothing at submission time uses. Every
+  refit of the network on two copies on the same kind of GPU, a T4, gave exactly the same held-out
+  scores. A refit on other hardware may differ in the last bits of the weights; the submission is
+  reproduced from the committed weights.
+- `python scripts/train_tcn.py` fits the network on two copies, the previous submission's model, in
+  about 70 minutes on a T4.
 - `python scripts/train_models.py` refits the trees, in about 25 minutes on 4 CPUs.
 - We ran every refit on Kaggle through [kaggle/](kaggle/README.md). Each run's log and manifest
   (commit, versions, output digests) are in `runs/`.
