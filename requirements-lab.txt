@@ -1,0 +1,3 @@
+# Plots of the lab's light, local scripts (scripts/lab/plot_definitions.py), on top of
+# requirements.txt and held to its pins: pip install -r requirements-lab.txt -c requirements.txt
+matplotlib==3.11.2
