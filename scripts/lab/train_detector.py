@@ -106,6 +106,9 @@ def main():
     config = dataset_yaml(data, os.path.join(args.work_dir, "data.yaml"))
     print("dataset {} at {} ({:.0f} s)".format(REPO_ID, REVISION[:8], time.time() - start))
 
+    # Kaggle's kernel sets MPLBACKEND to its notebook backend, which this venv lacks; matplotlib
+    # (imported by Ultralytics) then refuses to load. Plots here only go to files.
+    os.environ["MPLBACKEND"] = "Agg"
     import torch
     from ultralytics import YOLO
     device = 0 if torch.cuda.is_available() else "cpu"
