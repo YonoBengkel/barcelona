@@ -39,7 +39,8 @@ RESULTS = "/kaggle/working/kaggle-results.zip"
 EXTRA_REQUIREMENTS = {"scripts/train_tcn.py": "requirements-torch.txt",
                       "scripts/train_tcn_ensemble.py": "requirements-torch.txt",
                       "scripts/train_tcn_variants.py": "requirements-torch.txt",
-                      "scripts/lab/train_detector.py": "requirements-cv.txt"}
+                      "scripts/lab/train_detector.py": "requirements-cv.txt",
+                      "scripts/lab/label_study.py": "requirements-torch.txt"}
 
 
 class Log:
