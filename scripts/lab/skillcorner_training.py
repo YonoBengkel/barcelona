@@ -5,6 +5,10 @@ scripts/lab/cross_provider.py scores the submitted pipeline, fitted on IDSSE alo
 folds of four held-out SkillCorner matches each, and compares three networks on those matches:
 
 - 'idsse': the submitted network itself (models/possession_v1+tcn+copies8.json), fitted on IDSSE;
+- 'idsse+gaps': a diagnostic, not a model: the same evidence with every frame that carries no
+  tracking at all (a replay, a close-up) set to a sure D. SkillCorner labels nearly all of those
+  frames D, while the submitted network, which never saw a stretch without players, carries the
+  possession on through them; this measures what that alone costs;
 - 'skillcorner': fitted on the other 16 SkillCorner matches;
 - 'both': fitted on those 16 and the seven IDSSE matches, two degraded copies of every half, as
   the practice ground builds them (scripts/train_models.py). The two sources label possession
@@ -13,9 +17,10 @@ folds of four held-out SkillCorner matches each, and compares three networks on 
 
 Every SkillCorner half is read as given (extrapolated positions kept) and seen as it is and with
 home and away exchanged. Each network's decoder is chosen for each match on the other 19 matches'
-held-out evidence (the base grid), then scored with the organisers' metric on every frame and on
-tracked frames only: spellF1 pooled over the matches with a 95% interval from resampling them,
-macroF1 beside it, and possessions per ten minutes against SkillCorner's own.
+held-out evidence (the base grid, scored on every frame), then that pipeline is scored with the
+organisers' metric on every frame and on tracked frames only: spellF1 pooled over the matches with
+a 95% interval from resampling them, macroF1 beside it, and possessions per ten minutes against
+SkillCorner's own.
 
 Public data only. A job for Kaggle with a GPU; kaggle/run.py installs PyTorch for it.
 
@@ -42,8 +47,18 @@ from possession import skillcorner as sc  # noqa: E402
 from possession.features import compute, swapped  # noqa: E402
 from possession.models import design, design_names, load  # noqa: E402
 
-NETWORKS = ("idsse", "skillcorner", "both")
+NETWORKS = ("idsse", "idsse+gaps", "skillcorner", "both")
 VERSION = "v1"
+CHOOSE_ON = "every frame"
+# Log-probabilities of H, A and D on a frame without tracking, for 'idsse+gaps': a sure D.
+GAP_EVIDENCE = (-30.0, -30.0, 0.0)
+
+
+def gaps_dead(log_p, tracked):
+    """log_p with the evidence of every untracked frame set to GAP_EVIDENCE."""
+    out = np.array(log_p, dtype=np.float64, copy=True)
+    out[~np.asarray(tracked, dtype=bool)] = GAP_EVIDENCE
+    return out
 
 
 def match_halves(match):
@@ -66,8 +81,8 @@ def folds_of(matches, count):
 
 
 def grid_job(halves, log_ps, settings):
-    """cp.grid_counts' job for one match: its evidence, its truth for both scorings, the grid."""
-    return (log_ps, {scoring: cp.truth(halves, scoring) for scoring in cp.SCORINGS}, settings)
+    """cp.grid_counts' job for one match: its evidence, its truth for CHOOSE_ON, the grid."""
+    return (log_ps, {CHOOSE_ON: cp.truth(halves, CHOOSE_ON)}, settings)
 
 
 def run(matches, folds, copies, step, device, workers, start):
@@ -92,7 +107,10 @@ def run(matches, folds, copies, step, device, workers, start):
         submitted = load(cp.MODELS)
         for m in matches:
             evidence["idsse"][m] = [cp.evidence(submitted, h["X"]) for h in halves[m]]
-            pending["idsse"][m] = submit(grid_job(halves[m], evidence["idsse"][m], settings))
+            evidence["idsse+gaps"][m] = [gaps_dead(log_p, h["tracked"])
+                                         for log_p, h in zip(evidence["idsse"][m], halves[m])]
+            for name in ("idsse", "idsse+gaps"):
+                pending[name][m] = submit(grid_job(halves[m], evidence[name][m], settings))
         for number, fold in enumerate(folds):
             train = [h for m in matches if m not in fold for h in halves[m]]
             for name in ("skillcorner", "both"):
@@ -119,21 +137,22 @@ def run(matches, folds, copies, step, device, workers, start):
         "network", "scoring", "spellF1 [95% interval]", "macroF1", "poss/10min", "mean s",
         "decoder settings chosen"))
     for name in NETWORKS:
+        table = [{m: tables[name][m][k][CHOOSE_ON] for m in matches}
+                 for k in range(len(settings))]
+        picks = {m: tm.best(table, [o for o in matches if o != m]) for m in matches}
+        codes = {m: next(tm.decoded(evidence[name][m], [settings[picks[m]]])) for m in matches}
+        chosen = {}
+        for m in matches:
+            chosen[settings[picks[m]]] = chosen.get(settings[picks[m]], 0) + 1
         for scoring in cp.SCORINGS:
-            table = [{m: tables[name][m][k][scoring] for m in matches}
-                     for k in range(len(settings))]
-            picks = {m: tm.best(table, [o for o in matches if o != m]) for m in matches}
             counts, rates = [], []
             for m in matches:
-                counts.append(table[picks[m]][m])
-                codes = next(tm.decoded(evidence[name][m], [settings[picks[m]]]))
-                rates.append(tm.spell_rate(codes, cp.truth(halves[m], scoring)))
+                gt = cp.truth(halves[m], scoring)
+                counts.append(practice.counts(gt, codes[m]))
+                rates.append(tm.spell_rate(codes[m], gt))
             spell, macro = practice.pooled(counts)
             low, high = cp.interval(counts, rng)
             rate, length = np.array(rates).mean(axis=0)
-            chosen = {}
-            for m in matches:
-                chosen[settings[picks[m]]] = chosen.get(settings[picks[m]], 0) + 1
             results[(name, scoring)] = {"spellF1": spell, "interval": (low, high),
                                         "macroF1": macro, "rate": rate, "length": length,
                                         "per_match": [practice.pooled([c])[0] for c in counts]}

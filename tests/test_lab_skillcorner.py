@@ -145,6 +145,14 @@ def test_the_folds_hold_every_match_out_once():
     assert folds[0] == ["0", "5", "10", "15"]
 
 
+def test_the_gap_diagnostic_makes_only_untracked_frames_a_sure_dead_ball():
+    log_p = np.log(np.array([[0.6, 0.3, 0.1], [0.2, 0.7, 0.1], [0.5, 0.4, 0.1]]))
+    out = skillcorner_training.gaps_dead(log_p, np.array([True, False, True]))
+    assert np.array_equal(out[[0, 2]], log_p[[0, 2]])
+    assert out[1].tolist() == list(skillcorner_training.GAP_EVIDENCE)
+    assert out[1].argmax() == pm.D
+
+
 def test_untracked_frames_go_ungraded_only_when_asked():
     halves = [{"labels": np.array(list("HHD")), "tracked": np.array([True, False, True])},
               {"labels": np.array(list("AD")), "tracked": np.array([True, True])}]
