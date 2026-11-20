@@ -1,0 +1,6 @@
+# The lab's detector job (scripts/lab/train_detector.py) on Kaggle. kaggle/run.py installs this
+# file for that job only, constrained by requirements.txt so no pinned package moves.
+torch==2.7.1
+torchvision==0.22.1
+ultralytics==8.4.204
+huggingface-hub==2.4.0
