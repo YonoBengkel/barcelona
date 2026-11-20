@@ -87,7 +87,8 @@ aggregates only (see [AGENTS.md](AGENTS.md)).
 | `games.py`, `evaluation/`, `starter/` | the organisers' starter kit, unchanged | yes |
 | `docs/challenge/` | the organisers' documents | yes |
 | `data/` | match bundle and per-frame artefacts derived from it | no |
-| `external/` | downloaded public datasets | no |
+| `external/` | downloaded public datasets (IDSSE, and on `lab` SkillCorner) | no |
+| `scripts/lab/` | the lab's jobs, on branch `lab` | yes |
 | `evaluation/results/` | our submission files, scored locally against the public ground truth | no, except the organisers' baselines |
 
 ## How to run
@@ -150,6 +151,31 @@ in `scripts/train_tcn_variants.py`; `--models` picks another file, such as the p
 or the trees). The file must carry a `decoder` section, written by a Kaggle run of
 `scripts/train_tcn_variants.py`, `scripts/train_tcn.py` or `scripts/train_models.py`; without one
 the script stops before it reads the match.
+
+## Lab (branch `lab`, after the competition)
+
+The branch `lab` continues the work on open data only; `main` and the tag `phase1-submission`
+keep the submission as it was sent. Two modules feed the pipeline above from other sources:
+
+- `possession/lab_labels.py`: three readings of the IDSSE labels (`raw`, `controlled`, `strict`),
+  and `active(name)`, which swaps one into the practice ground and the decoder's scoring;
+- `possession/skillcorner.py`: SkillCorner's open broadcast tracking (MIT, 20 A-League matches,
+  pinned commit, files checked by digest) read into the same per-half arrays at 25 fps, with
+  SkillCorner's per-frame team possession as labels. Downloads land in `external/skillcorner/`.
+
+The lab's jobs, run on Kaggle through the same runner (`REF = "lab"`):
+
+```bash
+scripts/lab/label_study.py           # fit on one definition, judge by all three (GPU, PyTorch)
+scripts/lab/cross_provider.py        # the submitted pipeline on SkillCorner (CPU)
+scripts/lab/skillcorner_diagnose.py  # where it parts ways with SkillCorner's labels (CPU)
+scripts/lab/skillcorner_training.py  # networks fitted on SkillCorner, alone and with IDSSE (GPU)
+scripts/lab/multisource_idsse.py     # the same two sources judged on IDSSE (GPU)
+scripts/lab/train_detector.py        # YOLO on an open football image dataset (GPU, Ultralytics)
+```
+
+`scripts/lab/plot_definitions.py` is light and runs on the laptop: it draws the three definitions
+on one IDSSE match into `runs/lab-plots/` (`requirements-lab.txt` adds matplotlib).
 
 ## Application layers
 
