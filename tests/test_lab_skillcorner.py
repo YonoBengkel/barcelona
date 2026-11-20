@@ -27,6 +27,7 @@ def _script(name):
 
 cross_provider = _script("cross_provider")
 skillcorner_training = _script("skillcorner_training")
+skillcorner_diagnose = _script("skillcorner_diagnose")
 pm = practice.pm
 
 
@@ -151,6 +152,15 @@ def test_the_gap_diagnostic_makes_only_untracked_frames_a_sure_dead_ball():
     assert np.array_equal(out[[0, 2]], log_p[[0, 2]])
     assert out[1].tolist() == list(skillcorner_training.GAP_EVIDENCE)
     assert out[1].argmax() == pm.D
+
+
+def test_labels_shift_within_a_half_and_the_confusion_counts_by_row():
+    codes = np.array([pm.H, pm.A, pm.D], dtype=np.int8)
+    assert skillcorner_diagnose.shifted(codes, 1).tolist() == [pm.X, pm.H, pm.A]
+    assert skillcorner_diagnose.shifted(codes, -1).tolist() == [pm.A, pm.D, pm.X]
+    gt, pred = np.array([pm.H, pm.H, pm.A, pm.D]), np.array([pm.H, pm.A, pm.A, pm.H])
+    table = skillcorner_diagnose.confusion(gt, pred, np.array([True, True, True, False]))
+    assert table.tolist() == [[1, 1, 0], [0, 1, 0], [0, 0, 0]]
 
 
 def test_untracked_frames_go_ungraded_only_when_asked():
