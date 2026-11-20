@@ -28,7 +28,12 @@ def _script(name):
 cross_provider = _script("cross_provider")
 skillcorner_training = _script("skillcorner_training")
 skillcorner_diagnose = _script("skillcorner_diagnose")
+multisource_idsse = _script("multisource_idsse")
 pm = practice.pm
+
+
+def test_the_multisource_job_compares_idsse_alone_with_both_sources():
+    assert multisource_idsse.SOURCES == ("idsse", "both")
 
 
 def test_ten_fps_samples_are_interpolated_to_twenty_five_and_gaps_stay_missing():
