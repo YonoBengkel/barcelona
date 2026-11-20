@@ -15,10 +15,18 @@ from possession import tcn
 from possession.models import log_state_probabilities
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_spec = importlib.util.spec_from_file_location(
-    "cross_provider", os.path.join(ROOT, "scripts", "lab", "cross_provider.py"))
-cross_provider = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(cross_provider)
+
+
+def _script(name):
+    spec = importlib.util.spec_from_file_location(
+        name, os.path.join(ROOT, "scripts", "lab", name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cross_provider = _script("cross_provider")
+skillcorner_training = _script("skillcorner_training")
 pm = practice.pm
 
 
@@ -127,6 +135,14 @@ def test_the_fast_network_equals_the_exact_one():
         assert np.allclose(a, b, rtol=0, atol=1e-10)
     assert np.allclose(cross_provider.evidence({"tcn": model}, X),
                        log_state_probabilities({"tcn": model}, X), rtol=0, atol=1e-10)
+
+
+def test_the_folds_hold_every_match_out_once():
+    matches = [str(m) for m in range(20)]
+    folds = skillcorner_training.folds_of(matches, 5)
+    assert [len(fold) for fold in folds] == [4] * 5
+    assert sorted(m for fold in folds for m in fold) == sorted(matches)
+    assert folds[0] == ["0", "5", "10", "15"]
 
 
 def test_untracked_frames_go_ungraded_only_when_asked():
